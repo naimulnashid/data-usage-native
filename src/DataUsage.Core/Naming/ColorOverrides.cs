@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.RegularExpressions;
 using DataUsage.Core.Data;
 using Microsoft.Data.Sqlite;
@@ -92,16 +91,4 @@ public static partial class ColorOverrides
         ColorError.BadColor => "A colour is a hex code like #2f80ed.",
         _ => "",
     };
-
-    /// <summary>#rrggbb to its three channels; false for anything else.</summary>
-    public static bool TryRgb(string hex, out byte r, out byte g, out byte b)
-    {
-        r = g = b = 0;
-        if (Clean(hex) is not { } c) return false;
-        var n = int.Parse(c.AsSpan(1), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
-        r = (byte)((n >> 16) & 255);
-        g = (byte)((n >> 8) & 255);
-        b = (byte)(n & 255);
-        return true;
-    }
 }

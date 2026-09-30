@@ -192,14 +192,6 @@ public static class UsageDb
         }
     }
 
-    public static string? Meta(SqliteConnection conn, string key)
-    {
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT value FROM meta WHERE key = $k";
-        cmd.Parameters.AddWithValue("$k", key);
-        return cmd.ExecuteScalar() as string;
-    }
-
     public static void SetMeta(SqliteConnection conn, string key, string value) =>
         Exec(conn, "INSERT INTO meta(key, value) VALUES($k, $v) ON CONFLICT(key) DO UPDATE SET value = excluded.value", ("$k", key), ("$v", value));
 }

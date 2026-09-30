@@ -54,10 +54,6 @@ public static class Format
         return d.ToString("dddd, d MMMM yyyy", CultureInfo.GetCultureInfo("en-GB"));
     }
 
-    /// <summary>An ISO instant to the local calendar day it fell on - not its UTC day.</summary>
-    public static string LocalDayOf(string instant) =>
-        TryInstant(instant, out var t) ? t.ToLocalTime().ToString("yyyy-MM-dd", Inv) : instant[..Math.Min(10, instant.Length)];
-
     /// <summary>"21 Aug 2026, 14:05" in local time.</summary>
     public static string DateTimeLocal(string iso) =>
         TryInstant(iso, out var t) ? t.ToLocalTime().ToString("dd MMM yyyy, HH:mm", CultureInfo.GetCultureInfo("en-GB")) : iso;

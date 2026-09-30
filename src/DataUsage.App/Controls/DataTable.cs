@@ -136,26 +136,6 @@ public sealed class DataTable
         }
     }
 
-    public void AddFooter(IReadOnlyList<UIElement?> cells)
-    {
-        _grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        var row = _row++;
-        var rule = new Border { BorderBrush = Palette.BorderBrightBrush, BorderThickness = new Thickness(0, 1, 0, 0) };
-        Grid.SetRow(rule, row);
-        Grid.SetColumnSpan(rule, _columns.Count);
-        _grid.Children.Add(rule);
-        for (var i = 0; i < cells.Count && i < _columns.Count; i++)
-        {
-            if (cells[i] is not FrameworkElement content) continue;
-            if (content is TextBlock text) text.FontWeight = Fonts.Weight(620);
-            content.HorizontalAlignment = _columns[i].IsLeft(i) ? HorizontalAlignment.Left : HorizontalAlignment.Right;
-            content.Margin = new Thickness(14, 15, 14, 13);
-            Grid.SetColumn(content, i);
-            Grid.SetRow(content, row);
-            _grid.Children.Add(content);
-        }
-    }
-
     public int RowCount => _row - 1;
 
     /// <summary>The table in its sideways scroller.</summary>

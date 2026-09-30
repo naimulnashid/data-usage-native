@@ -184,14 +184,6 @@ public static class Ui
         story.Begin();
     }
 
-    /// <summary>The section heading between groups of panels.</summary>
-    public static TextBlock SectionTitle(string text)
-    {
-        var title = Caps(text);
-        title.Margin = new Thickness(0, 40, 0, 18);
-        return title;
-    }
-
     /// <summary>
     /// A card with a title, an optional subtitle and an optional aside on the
     /// right (the web dashboard's CardTitle), then the body.
@@ -238,19 +230,6 @@ public static class Ui
         CornerRadius = new CornerRadius(radius),
         Background = new SolidColorBrush(color),
         VerticalAlignment = VerticalAlignment.Center,
-    };
-
-    public static Border Pill(string text, Brush foreground, Brush border, Brush? background = null) => new()
-    {
-        Padding = new Thickness(8, 1, 8, 2),
-        // Half the pill's height. WinUI does not clamp an oversized radius the
-        // way CSS clamps 999px, so "fully round" has to be stated exactly.
-        CornerRadius = new CornerRadius(11),
-        BorderBrush = border,
-        BorderThickness = new Thickness(1),
-        Background = background ?? Palette.TransparentBrush,
-        VerticalAlignment = VerticalAlignment.Center,
-        Child = Text(text.ToUpperInvariant(), 11.5, 700, foreground, 0.05),
     };
 
     public enum BadgeKind { Plain, Ok, Bad, Accent }
@@ -474,33 +453,6 @@ public static class Ui
         link.Resources["HyperlinkButtonBackgroundPressed"] = Palette.TransparentBrush;
         link.Click += (_, _) => onClick();
         return link;
-    }
-
-    /// <summary>
-    /// A soft glow behind a piece of text - the headline total's accent halo.
-    /// XAML has no text-shadow, so this is a composition drop shadow cut from
-    /// the text's own alpha mask, which follows the text as it counts up.
-    /// </summary>
-    public static Grid Glow(TextBlock text, Color color, float blur = 60)
-    {
-        var host = new Grid();
-        var behind = new Canvas { IsHitTestVisible = false };
-        host.Children.Add(behind);
-        host.Children.Add(text);
-        text.SizeChanged += (_, _) =>
-        {
-            var compositor = Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(text).Compositor;
-            var shadow = compositor.CreateDropShadow();
-            shadow.Mask = text.GetAlphaMask();
-            shadow.Color = color;
-            shadow.BlurRadius = blur;
-            shadow.Offset = Vector3.Zero;
-            var sprite = compositor.CreateSpriteVisual();
-            sprite.Size = new Vector2((float)text.ActualWidth, (float)text.ActualHeight);
-            sprite.Shadow = shadow;
-            Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.SetElementChildVisual(behind, sprite);
-        };
-        return host;
     }
 
     /* ------------------------------------------------------------- Motion */

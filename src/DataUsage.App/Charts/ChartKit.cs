@@ -247,30 +247,6 @@ public sealed class ChartTooltip
         return row;
     }
 
-    /// <summary>The ruled "Total" line at the foot of a stacked chart's tooltip.</summary>
-    public static Border TotalRow(string label, string? value)
-    {
-        var row = new Grid { ColumnSpacing = 16 };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        row.Children.Add(Ui.Text(label, 14, 400, Palette.TextMutedBrush));
-        if (value is not null)
-        {
-            // The agent's accent from the shared brush - never a literal.
-            var v = Ui.Text(value, 14, 650, Palette.AccentBrightBrush, numeric: true);
-            Grid.SetColumn(v, 1);
-            row.Children.Add(v);
-        }
-        return new Border
-        {
-            BorderBrush = value is null ? null : Palette.BorderBrightBrush,
-            BorderThickness = new Thickness(0, value is null ? 0 : 1, 0, 0),
-            Margin = new Thickness(0, value is null ? 0 : 9, 0, 0),
-            Padding = new Thickness(0, value is null ? 0 : 8, 0, 0),
-            Child = row,
-        };
-    }
-
     private static TextBlock WithMargin(TextBlock block, double l, double t, double r, double b)
     {
         block.Margin = new Thickness(l, t, r, b);
