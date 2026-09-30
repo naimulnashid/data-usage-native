@@ -1,0 +1,13 @@
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.png binary
+*.ico binary
+*.ttf binary
+*.webp binary
+*.jpg binary
+*.jpeg binary
+# Exported task definitions are UTF-16 LE, as their own declaration says;
+# eol normalisation would corrupt them, and schtasks then rejects the file.
+tools/task/*.xml binary

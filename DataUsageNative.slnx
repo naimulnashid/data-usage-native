@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DataUsage.App/DataUsage.App.csproj" />
+    <Project Path="src/DataUsage.Cli/DataUsage.Cli.csproj" />
+    <Project Path="src/DataUsage.Core/DataUsage.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DataUsage.Core.Tests/DataUsage.Core.Tests.csproj" />
+  </Folder>
+</Solution>
