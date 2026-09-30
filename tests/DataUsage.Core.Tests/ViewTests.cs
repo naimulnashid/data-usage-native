@@ -56,12 +56,24 @@ public class ViewTests
         Assert.True(recent.Cells.Single(c => c.Date == "2026-10-01").Hidden);
         Assert.True(recent.Cells.Single(c => c.Date == "2026-09-29").Known);
 
-        var blocks = Heatmap.Expanded([], null, today);
-        Assert.Equal(2, blocks.Count);
-        Assert.Equal("2026-01-01", blocks[0].First);
-        Assert.Equal(Days.Add(blocks[0].Last, 1), blocks[1].Cells[0].Date);
-        Assert.True(blocks[0].Cells.Where(c => string.CompareOrdinal(c.Date, "2026-01-01") < 0).All(c => c.Hidden));
-        Assert.Equal("Jan 1 – Jun 26, 2026", Heatmap.BlockLabel(blocks[0]));
+        // The page opens on the earliest day with data, not on a fixed date.
+        var blocks = Heatmap.Expanded([("2026-06-27", 5)], "2026-06-27", today);
+        Assert.Single(blocks);
+        Assert.Equal("2026-06-27", blocks[0].First);
+        Assert.False(blocks[0].Cells[0].Hidden);
+        Assert.Equal("Jun 27 – Dec 25, 2026", Heatmap.BlockLabel(blocks[0]));
+
+        var later = Heatmap.Expanded([], "2026-06-27", new DateOnly(2027, 1, 10));
+        Assert.Equal(2, later.Count);
+        Assert.Equal(Days.Add(later[0].Last, 1), later[1].Cells[0].Date);
+
+        // Mid-week: the days before it in its first week are hidden, not "no data".
+        var midWeek = Heatmap.Expanded([], "2026-07-01", today);
+        Assert.Equal("2026-07-01", midWeek[0].First);
+        Assert.True(midWeek[0].Cells.Where(c => string.CompareOrdinal(c.Date, "2026-07-01") < 0).All(c => c.Hidden));
+        Assert.Equal("2026-06-27", midWeek[0].Cells[0].Date);
+
+        Assert.Single(Heatmap.Expanded([], null, today));
     }
 
     [Theory]

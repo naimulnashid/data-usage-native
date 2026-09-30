@@ -46,7 +46,7 @@ public static class Palette
         Color Bg, Color Surface, Color SurfaceHover, Color Inset, Color Border, Color BorderBright,
         Color Grid, Color Text, Color TextMuted, Color TextFaint, Color TooltipBg, Color Warn, Color Good,
         Color RowBorder, Color Accent, Color AccentBright, Color AccentFill, Color Down, Color Up, Color Wired,
-        Color HeatNone, Color HoverWash, Color Plate, string[] Heat,
+        Color HeatNone, Color HeatNoneRing, Color HoverWash, Color Plate, string[] Heat,
         double AccentDim, double AccentBorder, double AccentBorderStrong,
         double InkMin, double InkMax, double InkTextMin, double InkTextMax);
 
@@ -60,7 +60,7 @@ public static class Palette
         // two halves of one quantity. Darker is download.
         Down: Mix(Hex("#000000"), Hex("#2f80ed"), 0.78), Up: Mix(Hex("#ffffff"), Hex("#4d97ff"), 0.72),
         Wired: Mix(Hex("#ffffff"), Hex("#2f80ed"), 0.40),
-        HeatNone: Hex("#0b0b0d"), HoverWash: Hex("#ffffff", 0.04), Plate: Hex("#ececf1"),
+        HeatNone: Hex("#0b0b0d"), HeatNoneRing: Hex("#1e1e22"), HoverWash: Hex("#ffffff", 0.04), Plate: Hex("#ececf1"),
         Heat: ["#131519", "#12325c", "#17488a", "#1f62bd", "#2f80ed", "#6fb0ff"],
         AccentDim: 0.16, AccentBorder: 0.34, AccentBorderStrong: 0.46,
         // An app colour is painted within CIE L* 38..100 on black: a user's
@@ -77,7 +77,7 @@ public static class Palette
     /// (Ollama, Cursor, X) do not vanish into the card.
     /// </summary>
     private static readonly Tokens Light = new(
-        Bg: Hex("#f4f5f7"), Surface: Hex("#ffffff"), SurfaceHover: Hex("#f5f7fa"), Inset: Hex("#eef0f3"),
+        Bg: Hex("#f4f5f7"), Surface: Hex("#ffffff"), SurfaceHover: Hex("#eceff4"), Inset: Hex("#eef0f3"),
         Border: Hex("#e3e5ea"), BorderBright: Hex("#cfd2d9"), Grid: Hex("#eceef2"),
         Text: Hex("#16171a"), TextMuted: Hex("#52525b"), TextFaint: Hex("#6b6b76"), TooltipBg: Hex("#ffffff"),
         Warn: Hex("#b42318"), Good: Hex("#15803d"), RowBorder: Hex("#e3e5ea"),
@@ -85,8 +85,12 @@ public static class Palette
         Down: Hex("#1664d9"), Up: Mix(Hex("#ffffff"), Hex("#0f5bc4"), 0.45),
         // Wired is text as well as a fill here, so it stays dark enough to read.
         Wired: Hex("#3f6fb5"),
-        HeatNone: Hex("#fbfbfc"), HoverWash: Hex("#101828", 0.05), Plate: Hex("#000000", 0),
-        Heat: ["#e9edf3", "#c7dcf8", "#94bdf2", "#5b99e8", "#2a74dc", "#1252b0"],
+        // Until 2026-10-01 the hover fill was #f5f7fa, the no-data cell #fbfbfc
+        // with a #e3e5ea ring, and the chart wash 5% ink: all within ~1.1:1 of
+        // the white card, so none of them showed. The hover fill is the deepest
+        // step that keeps TextFaint at 4.6:1 on a hovered row.
+        HeatNone: Hex("#f6f7f9"), HeatNoneRing: Hex("#cdd1d8"), HoverWash: Hex("#101828", 0.09), Plate: Hex("#000000", 0),
+        Heat: ["#e1e6ed", "#c7dcf8", "#94bdf2", "#5b99e8", "#2a74dc", "#1252b0"],
         AccentDim: 0.10, AccentBorder: 0.30, AccentBorderStrong: 0.42,
         InkMin: 0, InkMax: 74, InkTextMin: 0, InkTextMax: 50);
 
@@ -153,6 +157,7 @@ public static class Palette
     public static readonly SolidColorBrush UpBrush = new();
     public static readonly SolidColorBrush WiredBrush = new();
     public static readonly SolidColorBrush HeatNoneBrush = new();
+    public static readonly SolidColorBrush HeatNoneRingBrush = new();
 
     /// <summary>
     /// The plate behind near-black logos (ASUS, OpenCode, Cursor) on black.
@@ -213,6 +218,7 @@ public static class Palette
         UpBrush.Color = _t.Up;
         WiredBrush.Color = _t.Wired;
         HeatNoneBrush.Color = _t.HeatNone;
+        HeatNoneRingBrush.Color = _t.HeatNoneRing;
         PlateBrush.Color = _t.Plate;
         for (var i = 0; i < Heat.Length; i++) Heat[i].Color = Hex(_t.Heat[i]);
     }

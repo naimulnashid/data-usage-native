@@ -83,7 +83,7 @@ public sealed class HeatmapView : Canvas
                 Fill = Views.Skeleton.Contains(this) ? Palette.InsetBrush
                     : c.Known ? Palette.Heat[AppColors.HeatStep(c.Total, _max)] : Palette.HeatNoneBrush,
                 // Never-collected days carry an outline, so they cannot read as quiet ones.
-                Stroke = c.Known ? Palette.TransparentBrush : Palette.BorderBrush,
+                Stroke = c.Known ? Palette.TransparentBrush : Palette.HeatNoneRingBrush,
                 StrokeThickness = 1,
                 CenterPoint = new Vector3((float)cell / 2, (float)cell / 2, 0),
                 ScaleTransition = new Vector3Transition { Duration = TimeSpan.FromMilliseconds(140) },

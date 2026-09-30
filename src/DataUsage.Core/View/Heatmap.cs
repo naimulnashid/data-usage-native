@@ -24,12 +24,6 @@ public static class Heatmap
 {
     public const int Weeks = 26;
 
-    /// <summary>
-    /// Where the expanded page begins unless data is older. A fixed date: a
-    /// calendar that opens on whatever day collection started reads as truncated.
-    /// </summary>
-    public const string ExpandedFrom = "2026-01-01";
-
     public static readonly string[] DayLabels = ["Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri"];
 
     private static readonly string[] MonthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -100,15 +94,20 @@ public static class Heatmap
     }
 
     /// <summary>
-    /// Every block from <see cref="ExpandedFrom"/> (or the earliest data, if
-    /// older) to today, oldest first. Consecutive blocks are contiguous weeks.
+    /// Every block from the earliest day with data to today, oldest first.
+    /// Consecutive blocks are contiguous weeks. No data at all starts today.
     /// </summary>
+    /// <remarks>
+    /// It used to start on a fixed 1 January 2026 (or older data), which drew six
+    /// months of empty weeks above the first real day. Since 2026-10-01 the page
+    /// opens on the first day this install holds -- 27 June 2026 on the machine it
+    /// was built on -- and the days before it in that week are hidden.
+    /// </remarks>
     public static List<HeatmapBlock> Expanded(IEnumerable<(string Date, long Total)> daily, string? earliest, DateOnly? today = null)
     {
         var t = today ?? LocalToday();
         var byDate = ToMap(daily);
-        var startIso = earliest is not null && string.CompareOrdinal(earliest, ExpandedFrom) < 0 ? earliest : ExpandedFrom;
-        var from = Days.Parse(startIso);
+        var from = earliest is null ? t : Days.Parse(earliest);
         var blocks = new List<HeatmapBlock>();
         for (var week = WeekStartOf(from); week <= t; week = week.AddDays(Weeks * 7))
             blocks.Add(Build(byDate, week, t, from));

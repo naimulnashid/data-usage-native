@@ -7,8 +7,8 @@ using Microsoft.UI.Xaml.Controls;
 namespace DataUsage.App.Views;
 
 /// <summary>
-/// The full history as 26-week blocks stacked oldest first, from 1 January
-/// 2026 or the first data day if older. Growing downward keeps the cells the
+/// The full history as 26-week blocks stacked oldest first, from the first
+/// day with data. Growing downward keeps the cells the
 /// overview's size however many years accumulate; one colour scale across
 /// every block, so a colour means the same bytes in every row.
 /// </summary>
