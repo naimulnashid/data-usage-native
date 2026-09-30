@@ -28,16 +28,31 @@ public sealed class TopAppsChart : ChartSurface
 
     private readonly IReadOnlyList<AppRow> _apps;
     private readonly IReadOnlyDictionary<string, string> _colors;
+    private readonly Action<AppRow>? _open;
+    private int _hovered = -1;
     private readonly List<(double Y, double H)> _bands = [];
     private Rectangle? _wash;
     private double _plotLeft;
 
-    public TopAppsChart(IReadOnlyList<AppRow> apps, IReadOnlyDictionary<string, string> colors, bool animate = true)
+    /// <param name="open">
+    /// Opens an app's detail page. A bar is a shortcut to the same page the
+    /// table's name links to, and only for apps that earn one
+    /// (<see cref="AppRow.Detailed"/>), exactly as the table links only those.
+    /// </param>
+    public TopAppsChart(IReadOnlyList<AppRow> apps, IReadOnlyDictionary<string, string> colors, bool animate = true, Action<AppRow>? open = null)
         : base(Math.Max(260, apps.Count * 44) + 32, animate)
     {
         _apps = apps;
         _colors = colors;
+        _open = open;
+        Canvas.Tapped += (_, e) =>
+        {
+            var index = BandAt(e.GetPosition(Canvas));
+            if (index >= 0 && _apps[index].Detailed) _open?.Invoke(_apps[index]);
+        };
     }
+
+    private int BandAt(Point at) => _bands.FindIndex(b => at.Y >= b.Y && at.Y < b.Y + b.H);
 
     protected override void Draw(bool animate)
     {
@@ -71,12 +86,13 @@ public sealed class TopAppsChart : ChartSurface
             CategoryLabel(app.Name, centre);
 
             var color = AppColors.Of(_colors, app.Name);
+            var fill = Palette.App(_colors, app.Name);
             var downW = Math.Max(0, X(app.Received) - _plotLeft);
             var upW = Math.Max(0, X(app.Total) - X(app.Received));
             var barH = Math.Min(BarSize, band * 0.8);
             if (downW > 0)
             {
-                var rect = new Rectangle { Width = downW, Height = barH, Fill = new SolidColorBrush(Palette.Hex(color)) };
+                var rect = new Rectangle { Width = downW, Height = barH, Fill = new SolidColorBrush(fill) };
                 Microsoft.UI.Xaml.Controls.Canvas.SetLeft(rect, _plotLeft);
                 Microsoft.UI.Xaml.Controls.Canvas.SetTop(rect, centre - barH / 2);
                 layer.Children.Add(rect);
@@ -85,7 +101,7 @@ public sealed class TopAppsChart : ChartSurface
                 layer.Children.Add(new Microsoft.UI.Xaml.Shapes.Path
                 {
                     Data = Axes.RoundedRight(new Rect(_plotLeft + downW, centre - barH / 2, upW, barH), 6),
-                    Fill = new SolidColorBrush(Palette.HexOrOther(AppColors.UploadTint(color))),
+                    Fill = new SolidColorBrush(Palette.Ink(AppColors.UploadTint(color))),
                 });
         }
         Canvas.Children.Add(layer);
@@ -121,11 +137,18 @@ public sealed class TopAppsChart : ChartSurface
     protected override void OnHover(Point at)
     {
         if (_wash is null) return;
-        var index = _bands.FindIndex(b => at.Y >= b.Y && at.Y < b.Y + b.H);
+        var index = BandAt(at);
         if (index < 0)
         {
             ClearHover();
             return;
+        }
+        if (index != _hovered)
+        {
+            _hovered = index;
+            ProtectedCursor = _open is not null && _apps[index].Detailed
+                ? Microsoft.UI.Input.InputSystemCursor.Create(Microsoft.UI.Input.InputSystemCursorShape.Hand)
+                : null;
         }
         _wash.Height = _bands[index].H;
         Microsoft.UI.Xaml.Controls.Canvas.SetTop(_wash, _bands[index].Y);
@@ -139,7 +162,7 @@ public sealed class TopAppsChart : ChartSurface
         head.Children.Add(Ui.Text(app.Name, 14, 600));
         body.Children.Add(head);
         var big = new Microsoft.UI.Xaml.Controls.StackPanel { Orientation = Microsoft.UI.Xaml.Controls.Orientation.Horizontal, Spacing = 7 };
-        big.Children.Add(Ui.Text(Format.Bytes(app.Total), 17, 650, new SolidColorBrush(color), numeric: true));
+        big.Children.Add(Ui.Text(Format.Bytes(app.Total), 17, 650, new SolidColorBrush(Palette.AppText(_colors, app.Name)), numeric: true));
         var share = Ui.Text($"{Format.Percent(app.Share)} of traffic", 13, 500, Palette.TextMutedBrush);
         share.VerticalAlignment = VerticalAlignment.Bottom;
         share.Margin = new Thickness(0, 0, 0, 2);
@@ -148,12 +171,15 @@ public sealed class TopAppsChart : ChartSurface
         var down = app.Total > 0 ? (double)app.Received / app.Total * 100 : 0;
         body.Children.Add(ChartTooltip.Muted($"↓ {Format.Bytes(app.Received)}   {Format.Percent(down)}"));
         body.Children.Add(ChartTooltip.Muted($"↑ {Format.Bytes(app.Sent)}   {Format.Percent(100 - down)}", 3));
+        if (_open is not null && app.Detailed) body.Children.Add(ChartTooltip.Muted("Click the bar for details", 8));
         Tooltip.Show(body, at);
     }
 
     protected override void ClearHover()
     {
         base.ClearHover();
+        _hovered = -1;
+        ProtectedCursor = null;
         if (_wash is not null) _wash.Visibility = Visibility.Collapsed;
     }
 }

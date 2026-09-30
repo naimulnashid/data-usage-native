@@ -23,6 +23,8 @@ param(
   # before capturing, to photograph a hover state. -1 leaves it alone.
   [int]$HoverX = -1,
   [int]$HoverY = -1,
+  # Click at the hover point, then wait for what the click opens before capturing.
+  [switch]$Click,
   # Maximise instead of sizing to -Width x -Height.
   [switch]$Maximize,
   # Leave the size to the app (DATAUSAGE_DEBUG_FULLPAGE grows the window to the
@@ -60,6 +62,14 @@ public static class WindowCapture {
     input.mi.dy = (int)((y - vy) * 65535.0 / (vh - 1));
     input.mi.flags = 0x0001 | 0x8000 | 0x4000; // MOVE | ABSOLUTE | VIRTUALDESK
     SendInput(1, new[] { input }, Marshal.SizeOf(typeof(INPUT)));
+  }
+
+  public static void Click() {
+    var down = new INPUT { type = 0 }; down.mi.flags = 0x0002; // LEFTDOWN
+    var up = new INPUT { type = 0 }; up.mi.flags = 0x0004;     // LEFTUP
+    SendInput(1, new[] { down }, Marshal.SizeOf(typeof(INPUT)));
+    System.Threading.Thread.Sleep(60);
+    SendInput(1, new[] { up }, Marshal.SizeOf(typeof(INPUT)));
   }
 
   public static void Hover(IntPtr h, int x, int y) {
@@ -146,6 +156,10 @@ if ($AppSized) {
 if ($HoverX -ge 0 -and $HoverY -ge 0) {
   [WindowCapture]::Hover($h, $HoverX, $HoverY)
   Start-Sleep -Milliseconds 1200
+  if ($Click) {
+    [WindowCapture]::Click()
+    Start-Sleep -Milliseconds 3000
+  }
 }
 
 $full = [System.IO.Path]::GetFullPath($Out)

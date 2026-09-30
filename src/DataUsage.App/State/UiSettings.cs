@@ -23,6 +23,12 @@ public sealed class UiSettings
     /// <summary>A Windows notification when collection fails or stalls.</summary>
     public bool NotifyProblems { get; set; } = true;
 
+    /// <summary>
+    /// "dark", "light" or "system". Dark by default: it is what this app has
+    /// always been. System follows Windows' app mode and keeps following it.
+    /// </summary>
+    public string Theme { get; set; } = "dark";
+
     /// <summary>Page zoom, 0.5 to 2: Ctrl+Plus / Ctrl+Minus / Ctrl+0, as in a browser.</summary>
     public double Zoom { get; set; } = 1;
 

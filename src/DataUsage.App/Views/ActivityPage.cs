@@ -18,6 +18,8 @@ public sealed class ActivityPage(PageContext ctx) : IPage
 
     public void Load() => _days = ctx.State.Queries!.HeatmapDays(weeks: null);
 
+    public void Placeholder() => _days = Views.Placeholder.Heat();
+
     public UIElement Build()
     {
         var page = new StackPanel();

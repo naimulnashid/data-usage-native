@@ -7,7 +7,7 @@ namespace DataUsage.Core.Data;
 /// </summary>
 public static class Schema
 {
-    public const int Version = 1;
+    public const int Version = 2;
 
     public const string Sql = """
         PRAGMA journal_mode = WAL;
@@ -114,6 +114,18 @@ public static class Schema
           device     TEXT NOT NULL,
           app_key    TEXT NOT NULL,
           name       TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (device, app_key)
+        );
+
+        -- Chart colours chosen in the app (version 2, 2026-09-30), keyed like
+        -- app_renames, as lowercase #rrggbb. Only the user's overrides; every
+        -- other colour is still assigned in code. The web dashboard's table,
+        -- column for column. See Naming/ColorOverrides.cs.
+        CREATE TABLE IF NOT EXISTS app_colors (
+          device     TEXT NOT NULL,
+          app_key    TEXT NOT NULL,
+          color      TEXT NOT NULL,
           updated_at TEXT NOT NULL,
           PRIMARY KEY (device, app_key)
         );

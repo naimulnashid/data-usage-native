@@ -80,7 +80,8 @@ public sealed class HeatmapView : Canvas
                 Height = cell,
                 RadiusX = 3,
                 RadiusY = 3,
-                Fill = c.Known ? Palette.Heat[AppColors.HeatStep(c.Total, _max)] : Palette.HeatNoneBrush,
+                Fill = Views.Skeleton.Contains(this) ? Palette.InsetBrush
+                    : c.Known ? Palette.Heat[AppColors.HeatStep(c.Total, _max)] : Palette.HeatNoneBrush,
                 // Never-collected days carry an outline, so they cannot read as quiet ones.
                 Stroke = c.Known ? Palette.TransparentBrush : Palette.BorderBrush,
                 StrokeThickness = 1,

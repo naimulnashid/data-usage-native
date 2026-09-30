@@ -427,18 +427,27 @@ public sealed partial class UsageQueries(string databasePath, string? splitApp =
         var resolve = Resolver(db);
         var totals = new Dictionary<string, long>();
         var renamed = new Dictionary<string, string>();
+        var shownAs = new Dictionary<string, string>(); // group key -> display name
         foreach (var (i, k, b) in Rows(db, "SELECT app_identity, app_kind, SUM(bytes_sent + bytes_received) FROM usage_records WHERE is_aggregate = 0 GROUP BY app_identity, app_kind",
                      r => (r.GetString(0), r.GetString(1), L(r, 2))))
         {
             var n = resolve(i, k);
             totals[n.BaseName] = totals.GetValueOrDefault(n.BaseName) + b;
             if (n.DisplayName != n.BaseName) renamed[n.DisplayName] = n.BaseName;
+            shownAs[n.App.GroupKey] = n.DisplayName;
         }
         var map = AppColors.Assign(totals.OrderByDescending(kv => kv.Value).Select(kv => kv.Key));
         foreach (var (name, @base) in renamed)
             if (map.TryGetValue(@base, out var c)) map[name] = c;
+        // The user's own colours win over brand and palette alike, under
+        // whatever name the app shows. See Naming/ColorOverrides.cs.
+        foreach (var (key, color) in ColorOverrides.Read(db))
+            if (shownAs.TryGetValue(key, out var name)) map[name] = color;
         return map;
     });
+
+    /// <summary>Family group key to the colour the user chose for it.</summary>
+    public Dictionary<string, string> ColorOverrideMap() => With(ColorOverrides.Read);
 
     /// <summary>Every family ever seen: as shown, and as it would be without a rename.</summary>
     public Dictionary<string, (string Name, string Base)> AppNamesByKey() => With(db =>

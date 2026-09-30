@@ -31,7 +31,7 @@ public static class Shell
             Content = Ui.Paragraph(message, 14.5, Palette.TextMutedBrush),
             CloseButtonText = "OK",
             XamlRoot = window.Content.XamlRoot,
-            RequestedTheme = ElementTheme.Dark,
+            RequestedTheme = Palette.IsLight ? ElementTheme.Light : ElementTheme.Dark,
         };
         await dialog.ShowAsync();
     }
@@ -138,7 +138,7 @@ public static class Shell
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = ctx.Window.Content.XamlRoot,
-            RequestedTheme = ElementTheme.Dark,
+            RequestedTheme = Palette.IsLight ? ElementTheme.Light : ElementTheme.Dark,
         };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
         var device = DeviceSettings.Load(state.DataDir);

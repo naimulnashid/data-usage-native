@@ -21,6 +21,95 @@ public sealed class SyncPage(PageContext ctx) : IPage
     private TaskInfo? _collector, _snapshot;
     private int _page = 1;
 
+    public void Placeholder()
+    {
+        _data = Views.Placeholder.Sync();
+        _collector = _snapshot = Views.Placeholder.Task();
+    }
+
+    /// <summary>
+    /// Newest and Oldest at the ends, Newer and Older one step each, the page
+    /// numbers around this one (Core/View/Pages), and a box that goes straight
+    /// to any page. Page 1 is the newest. The web dashboard's pager.
+    /// </summary>
+    private FrameworkElement Pager(int pages)
+    {
+        void Go(int page)
+        {
+            _page = Math.Clamp(page, 1, pages);
+            ctx.Redraw();
+        }
+
+        var pager = new WrapPanel { HorizontalSpacing = 7, VerticalSpacing = 8, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 18, 0, 0) };
+        Button Step(string label, int to, bool enabled, string tip)
+        {
+            var chip = Ui.Chip(label, false);
+            chip.IsEnabled = enabled;
+            chip.Click += (_, _) => Go(to);
+            Ui.SetTip(chip, tip);
+            return chip;
+        }
+        pager.Children.Add(Step("Newest", 1, _page > 1, "First page: the newest runs"));
+        pager.Children.Add(Step("← Newer", _page - 1, _page > 1, "Previous page"));
+
+        var numbers = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, Margin = new Thickness(6, 0, 6, 0) };
+        foreach (var item in Pages.Items(_page, pages))
+        {
+            if (item is not { } n)
+            {
+                var gap = Ui.Text("…", 15, 400, Palette.TextFaintBrush, selectable: false);
+                gap.VerticalAlignment = VerticalAlignment.Center;
+                numbers.Children.Add(gap);
+                continue;
+            }
+            var chip = Ui.Chip(n.ToString(System.Globalization.CultureInfo.InvariantCulture), n == _page);
+            chip.MinWidth = 40;
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(chip, $"Page {n}");
+            chip.Click += (_, _) => Go(n);
+            numbers.Children.Add(chip);
+        }
+        pager.Children.Add(numbers);
+
+        pager.Children.Add(Step("Older →", _page + 1, _page < pages, "Next page"));
+        pager.Children.Add(Step("Oldest", pages, _page < pages, "Last page: the oldest runs"));
+
+        // Straight to any page, rather than a walk through the ones between.
+        var jump = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(10, 0, 0, 0) };
+        var label = Ui.Text("Go to page", 15, 400, Palette.TextMutedBrush, selectable: false);
+        label.VerticalAlignment = VerticalAlignment.Center;
+        jump.Children.Add(label);
+        var box = new NumberBox
+        {
+            Value = _page,
+            Minimum = 1,
+            Maximum = pages,
+            Width = 76,
+            SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Hidden,
+            ValidationMode = NumberBoxValidationMode.InvalidInputOverwritten,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(box, $"Page number, 1 to {pages}");
+        void Submit()
+        {
+            if (!double.IsNaN(box.Value)) Go((int)box.Value);
+        }
+        box.KeyDown += (_, e) =>
+        {
+            if (e.Key != Windows.System.VirtualKey.Enter) return;
+            e.Handled = true;
+            Submit();
+        };
+        jump.Children.Add(box);
+        var of = Ui.Text($"of {pages}", 15, 400, Palette.TextMutedBrush, selectable: false);
+        of.VerticalAlignment = VerticalAlignment.Center;
+        jump.Children.Add(of);
+        var go = Ui.Chip("Go", false, 14);
+        go.Click += (_, _) => Submit();
+        jump.Children.Add(go);
+        pager.Children.Add(jump);
+        return pager;
+    }
+
     public void Load()
     {
         var q = ctx.State.Queries!;
@@ -115,22 +204,7 @@ public sealed class SyncPage(PageContext ctx) : IPage
         body.Children.Add(table.Build());
 
         var pages = Math.Max(1, (int)Math.Ceiling(data.TotalRuns / (double)PageSize));
-        if (pages > 1)
-        {
-            var pager = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 14, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 18, 0, 0) };
-            var newer = Ui.Chip("← Newer", false);
-            newer.IsEnabled = _page > 1;
-            newer.Click += (_, _) => { _page--; ctx.Redraw(); };
-            var older = Ui.Chip("Older →", false);
-            older.IsEnabled = _page < pages;
-            older.Click += (_, _) => { _page++; ctx.Redraw(); };
-            pager.Children.Add(newer);
-            var label = Ui.Text($"Page {_page} of {pages}", 15, 400, Palette.TextMutedBrush);
-            label.VerticalAlignment = VerticalAlignment.Center;
-            pager.Children.Add(label);
-            pager.Children.Add(older);
-            body.Children.Add(pager);
-        }
+        if (pages > 1) body.Children.Add(Pager(pages));
 
         var errors = data.Runs.Where(r => r.Error is not null).Take(5).ToList();
         if (errors.Count > 0)

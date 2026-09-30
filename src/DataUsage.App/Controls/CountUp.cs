@@ -29,7 +29,16 @@ public static class CountUp
             block.Text = format(t >= 1 ? value : value * eased);
             if (t >= 1) CompositionTarget.Rendering -= Tick;
         }
-        block.Loaded += (_, _) => CompositionTarget.Rendering += Tick;
+        block.Loaded += (_, _) =>
+        {
+            // A skeleton shows the final figure's width at once (Views/Skeleton).
+            if (Views.Skeleton.Contains(block))
+            {
+                block.Text = format(value);
+                return;
+            }
+            CompositionTarget.Rendering += Tick;
+        };
         block.Unloaded += (_, _) => CompositionTarget.Rendering -= Tick;
         return block;
     }

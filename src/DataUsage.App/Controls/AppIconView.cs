@@ -16,8 +16,6 @@ namespace DataUsage.App.Controls;
 /// </summary>
 public static class AppIconView
 {
-    private static readonly SolidColorBrush PlateBrush = new(Palette.Hex("#ececf1"));
-
     public static FrameworkElement Create(string name, IReadOnlyDictionary<string, string> colors, IReadOnlyDictionary<string, AppIcon> icons, double size = 18)
     {
         var color = Palette.App(colors, name);
@@ -44,13 +42,15 @@ public static class AppIconView
 
         box.Loaded += async (_, _) =>
         {
+            // A skeleton keeps the swatch box: its logos would be stand-ins' logos.
+            if (Views.Skeleton.Contains(box)) return;
             var source = await ImageLoader.LoadAsync(icon.Path, size, box.XamlRoot?.RasterizationScale ?? 1);
             if (source is null) return;
             // Near-black marks vanish on a true-black card; only those that
             // measured dark get the light plate (see AppIcons.PlateStems).
             if (icon.Plate)
             {
-                box.Background = PlateBrush;
+                box.Background = Palette.PlateBrush;
                 box.Padding = new Thickness(1.5);
             }
             box.Child = new Image { Source = source, Stretch = Stretch.Uniform };

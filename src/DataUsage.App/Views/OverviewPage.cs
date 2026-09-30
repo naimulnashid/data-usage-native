@@ -34,6 +34,15 @@ public sealed class OverviewPage(PageContext ctx) : IPage
         _rows = _data.LatestDate is null ? q.RowCount() : 1;
     }
 
+    public void Placeholder()
+    {
+        _data = Views.Placeholder.Overview(ctx.State.Device.Split);
+        _timeline = Views.Placeholder.Timeline();
+        _networks = Views.Placeholder.Networks();
+        _heat = Views.Placeholder.Heat();
+        _rows = 1;
+    }
+
     public UIElement Build()
     {
         var data = _data!;
@@ -140,24 +149,27 @@ public sealed class OverviewPage(PageContext ctx) : IPage
     {
         var state = ctx.State;
         var focusColor = Palette.App(state.Colors, app);
-        var otherColor = Palette.Hex(AppColors.EverythingElse);
+        var otherColor = Palette.Ink(AppColors.EverythingElse);
         var body = new StackPanel();
         body.Children.Add(TwoPartBar([(pct / 100, new SolidColorBrush(focusColor)), (1 - pct / 100, new SolidColorBrush(otherColor))]));
 
-        FrameworkElement Half(string label, long bytes, double share, Windows.UI.Color color, bool icon)
+        FrameworkElement Half(string label, long bytes, double share, Windows.UI.Color color, Windows.UI.Color ink, bool icon)
         {
             var half = new StackPanel();
             var head = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
             head.Children.Add(icon ? AppIconView.Create(label, state.Colors, state.Icons, 15) : Ui.Swatch(color));
             head.Children.Add(Ui.Text(label, 15, 400, Palette.TextMutedBrush));
             half.Children.Add(head);
-            var value = Parts.BytesValue(bytes, new SolidColorBrush(color));
+            // The figure in the text band, which on white is darker than the fill.
+            var value = Parts.BytesValue(bytes, new SolidColorBrush(ink));
             value.Margin = new Thickness(0, 5, 0, 0);
             half.Children.Add(value);
             half.Children.Add(Ui.Text($"{Format.Percent(share)} of named traffic", 15, 400, Palette.TextMutedBrush));
             return half;
         }
-        var grid = Parts.Grid(340, Half(app, focus, pct, focusColor, true), Half("Everything else", other, 100 - pct, otherColor, false));
+        var grid = Parts.Grid(340,
+            Half(app, focus, pct, focusColor, Palette.AppText(state.Colors, app), true),
+            Half("Everything else", other, 100 - pct, otherColor, Palette.InkText(AppColors.EverythingElse), false));
         grid.Margin = new Thickness(0, 25.6, 0, 0);
         body.Children.Add(grid);
         return body;

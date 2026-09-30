@@ -24,6 +24,8 @@ public sealed class AppsPage(PageContext ctx) : IPage
 
     public void Load() => _data = ctx.State.Queries!.ByApp(ctx.State.Scope);
 
+    public void Placeholder() => _data = Views.Placeholder.ByApp();
+
     public UIElement Build()
     {
         var data = _data!;
@@ -39,7 +41,7 @@ public sealed class AppsPage(PageContext ctx) : IPage
         }
 
         page.Children.Add(Ui.Panel("Top 10", "Largest consumers. Each bar is download, then upload in a tint of the same colour.", null,
-            new TopAppsChart(data.Apps.Take(10).ToList(), ctx.State.Colors)));
+            new TopAppsChart(data.Apps.Take(10).ToList(), ctx.State.Colors, open: a => ctx.Navigate(new Route(PageKind.App, a.Key)))));
         page.Children.Add(Ui.Panel("Apps",
             "Percentages are of attributed traffic, so they will not quite reach the headline total — the remainder is traffic SRUM could not attribute to a process.",
             null, Table(data)));

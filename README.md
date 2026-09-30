@@ -125,8 +125,11 @@ are needed.
   and Exit.
 - **Notifications** when a collection fails or collection stalls (settings or tray).
 - **Start at login**: settings menu or tray. It starts straight to the tray.
-- **Rename an app**: the pencil beside its name (hover a table row). The name
-  is stored with the history.
+- **Rename an app, or change its colour**: the pencil beside its name (hover a
+  table row). Pick a colour or type its hex code; "Default colour" goes back.
+  Both are stored with the history.
+- **Light or dark**: Settings > Theme, or follow Windows' setting.
+- **Click a Top 10 bar** to open that app's page.
 - **Logos**: in the same pencil menu choose **Set logo…**, or drop an image on
   the app's name. Files live in the data folder's `logos\`, named after the
   app (`Bitwarden.svg`); dropping files there works too.

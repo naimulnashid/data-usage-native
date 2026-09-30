@@ -38,4 +38,11 @@ public interface IPage
 
     /// <summary>Runs on the UI thread, after <see cref="Load"/>.</summary>
     UIElement Build();
+
+    /// <summary>
+    /// Fills the page with stand-in data (<see cref="Views.Placeholder"/>) in
+    /// place of <see cref="Load"/>, so <see cref="Build"/> can draw its loading
+    /// skeleton. No database access.
+    /// </summary>
+    void Placeholder();
 }

@@ -50,6 +50,9 @@ public sealed class AppState : IDisposable
     /// <summary>App name to colour, from all-time totals.</summary>
     public IReadOnlyDictionary<string, string> Colors { get; private set; } = new Dictionary<string, string>();
 
+    /// <summary>Family group key to the colour the user chose, for the apps that have one.</summary>
+    public IReadOnlyDictionary<string, string> ColorOverrides { get; private set; } = new Dictionary<string, string>();
+
     /// <summary>Name to logo, renames included.</summary>
     public IReadOnlyDictionary<string, AppIcon> Icons { get; private set; } = new Dictionary<string, AppIcon>();
 
@@ -162,6 +165,7 @@ public sealed class AppState : IDisposable
                 var names = queries.AppNamesByKey();
                 return (Signature: signature,
                     Colors: queries.ColorMap(),
+                    Overrides: queries.ColorOverrideMap(),
                     Icons: AppIcons.Map(logos, names.Values.Select(v => (v.Name, v.Base))),
                     Sync: queries.Sync(10),
                     Latest: queries.Latest());
@@ -169,6 +173,7 @@ public sealed class AppState : IDisposable
             if (onlyIfChanged && result.Signature == _signature) return;
             _signature = result.Signature;
             Colors = result.Colors;
+            ColorOverrides = result.Overrides;
             Icons = result.Icons;
             Sync = result.Sync;
             Latest = result.Latest;
@@ -197,7 +202,18 @@ public sealed class AppState : IDisposable
                    (SELECT COALESCE(SUM(votes), 0) FROM network_names) || '|' ||
                    (SELECT COUNT(*) || ':' || COALESCE(MAX(updated_at), '') FROM app_renames)
             """;
-        return cmd.ExecuteScalar() as string ?? "";
+        var signature = cmd.ExecuteScalar() as string ?? "";
+        // Apart, because a database no new-version write path has touched yet
+        // has no app_colors table, and the query above must not fail for it.
+        try
+        {
+            cmd.CommandText = "SELECT COUNT(*) || ':' || COALESCE(MAX(updated_at), '') FROM app_colors";
+            signature += "|" + (cmd.ExecuteScalar() as string ?? "");
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException)
+        {
+        }
+        return signature;
     }
 
     /// <summary>The Sync button: a collection now, whatever the schedule says.</summary>

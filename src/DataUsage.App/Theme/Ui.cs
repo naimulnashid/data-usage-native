@@ -98,8 +98,40 @@ public static class Ui
             Padding = padding,
             Child = child,
         };
+        if (Palette.IsLight) Elevate(card, RestZ);
         if (hover) HoverLift(card);
         return card;
+    }
+
+    /// <summary>
+    /// What shadows fall on: a plain surface behind the scrolling page. In WinUI 3
+    /// a <see cref="ThemeShadow"/> outside a popup draws only onto elements
+    /// registered as its receivers - with none, nothing shows - and a receiver
+    /// may not be an ancestor of the caster. Set once by the window.
+    /// </summary>
+    public static UIElement? ShadowReceiver { get; set; }
+
+    /// <summary>A shadow that falls on <see cref="ShadowReceiver"/>.</summary>
+    public static ThemeShadow Shadow()
+    {
+        var shadow = new ThemeShadow();
+        if (ShadowReceiver is not null) shadow.Receivers.Add(ShadowReceiver);
+        return shadow;
+    }
+
+    /// <summary>A card's height above the page on the light theme, at rest and hovered.</summary>
+    private const float RestZ = 12, HoverZ = 32;
+
+    /// <summary>
+    /// Elevation, the light theme's separation and its hover: a soft shadow
+    /// that grows as the element rises. On black a shadow is invisible, so the
+    /// dark theme keeps its border-and-lift instead.
+    /// </summary>
+    public static void Elevate(UIElement element, float z)
+    {
+        element.Shadow ??= Shadow();
+        var t = element.Translation;
+        element.Translation = new Vector3(t.X, t.Y, z);
     }
 
     /// <summary>
@@ -113,11 +145,13 @@ public static class Ui
         card.PointerEntered += (_, _) =>
         {
             card.BorderBrush = Palette.BorderBrightBrush;
+            if (Palette.IsLight) Elevate(card, HoverZ);
             Slide(card, -lift, 200);
         };
         card.PointerExited += (_, _) =>
         {
             card.BorderBrush = Palette.BorderBrush;
+            if (Palette.IsLight) Elevate(card, RestZ);
             Slide(card, 0, 200);
         };
     }
@@ -269,7 +303,8 @@ public static class Ui
         chip.PointerEntered += (_, _) => { if (!active) label.Foreground = Palette.TextBrush; };
         chip.PointerExited += (_, _) => { if (!active) label.Foreground = Palette.TextMutedBrush; };
         chip.TranslationTransition = new Vector3Transition { Duration = TimeSpan.FromMilliseconds(180) };
-        chip.PointerEntered += (_, _) => chip.Translation = new Vector3(0, -1, 0);
+        chip.PointerEntered += (_, _) => chip.Translation = new Vector3(0, -1, Palette.IsLight ? 6 : 0);
+        if (Palette.IsLight) chip.Shadow = Shadow();
         chip.PointerExited += (_, _) => chip.Translation = Vector3.Zero;
         return chip;
     }
@@ -419,7 +454,8 @@ public static class Ui
         button.Resources["ButtonBorderBrushDisabled"] = primary ? Palette.AccentBorderStrongBrush : Palette.BorderBrightBrush;
         button.Resources["ButtonForegroundDisabled"] = primary ? Palette.AccentBrightBrush : Palette.TextMutedBrush;
         button.TranslationTransition = new Vector3Transition { Duration = TimeSpan.FromMilliseconds(180) };
-        button.PointerEntered += (_, _) => { if (button.IsEnabled) button.Translation = new Vector3(0, -1, 0); };
+        button.PointerEntered += (_, _) => { if (button.IsEnabled) button.Translation = new Vector3(0, -1, Palette.IsLight ? 6 : 0); };
+        if (Palette.IsLight) button.Shadow = Shadow();
         button.PointerExited += (_, _) => button.Translation = Vector3.Zero;
         return button;
     }

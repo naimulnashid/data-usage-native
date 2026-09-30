@@ -59,8 +59,16 @@ public sealed partial class MainWindow : Window
 
         Zoom.Set(settings.Zoom);
         Zoom.Changed += OnZoomChanged;
+        // Before anything is built, so the first frame is already the right theme.
+        Palette.Apply(ResolveTheme(settings.Theme));
+        _systemColors.ColorValuesChanged += (_, _) => DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_settings.Theme == "system") Palette.Apply(ResolveTheme("system"));
+        });
+        Palette.Changed += OnThemeChanged;
         ConfigureWindow();
         BuildShell();
+        Root.RequestedTheme = Palette.IsLight ? ElementTheme.Light : ElementTheme.Dark;
 
         state.Changed += () =>
         {
@@ -76,9 +84,40 @@ public sealed partial class MainWindow : Window
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr hwnd);
 
-    private void ConfigureWindow()
+    /* -------------------------------------------------------------- Theme */
+
+    private readonly Windows.UI.ViewManagement.UISettings _systemColors = new();
+
+    /// <summary>Whether a theme choice means light, reading Windows' app mode for "system".</summary>
+    private bool ResolveTheme(string choice) => choice switch
     {
-        ExtendsContentIntoTitleBar = true;
+        "light" => true,
+        "system" => _systemColors.GetColorValue(Windows.UI.ViewManagement.UIColorType.Background) is { R: > 128 },
+        _ => false,
+    };
+
+    private void SetTheme(string choice)
+    {
+        _settings.Theme = choice;
+        _settings.Save();
+        Palette.Apply(ResolveTheme(choice));
+    }
+
+    /// <summary>
+    /// The shared brushes have already been retinted (Palette.Apply); what is
+    /// left is what baked a colour in when it was built - the caption buttons,
+    /// the controls' own theme, the page's charts - so the page is rebuilt.
+    /// </summary>
+    private void OnThemeChanged()
+    {
+        Root.RequestedTheme = Palette.IsLight ? ElementTheme.Light : ElementTheme.Dark;
+        PaintCaptionButtons();
+        UpdateChrome();
+        Rebuild(keepScroll: true);
+    }
+
+    private void PaintCaptionButtons()
+    {
         var bar = AppWindow.TitleBar;
         bar.ButtonBackgroundColor = Colors.Transparent;
         bar.ButtonInactiveBackgroundColor = Colors.Transparent;
@@ -88,6 +127,12 @@ public sealed partial class MainWindow : Window
         bar.ButtonHoverForegroundColor = Palette.Text;
         bar.ButtonPressedBackgroundColor = Palette.BorderBright;
         bar.ButtonPressedForegroundColor = Palette.Text;
+    }
+
+    private void ConfigureWindow()
+    {
+        ExtendsContentIntoTitleBar = true;
+        PaintCaptionButtons();
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "app.ico"));
         AppWindow.Title = "Data Usage";
 
@@ -204,6 +249,12 @@ public sealed partial class MainWindow : Window
         _frame.Children.Add(column);
         _scroller.SizeChanged += (_, e) => _frame.Width = e.NewSize.Width;
         _scroller.Content = _frame;
+        // Behind the page, a surface for the light theme's card shadows to fall
+        // on (see Ui.ShadowReceiver): the page's own ancestors cannot receive.
+        var shadowReceiver = new Grid { Background = Palette.BgBrush };
+        Grid.SetRow(shadowReceiver, 1);
+        main.Children.Add(shadowReceiver);
+        Ui.ShadowReceiver = shadowReceiver;
         Grid.SetRow(_scroller, 1);
         main.Children.Add(_scroller);
 
@@ -522,6 +573,24 @@ public sealed partial class MainWindow : Window
             notify.IsChecked = _settings.NotifyProblems;
             tray.IsChecked = _settings.CloseToTray;
         };
+        // Theme: three choices, one checked. Dark by default; System follows
+        // Windows' app mode.
+        var theme = new MenuFlyoutSubItem { Text = "Theme", Icon = new FontIcon { Glyph = "\uE790" } };
+        var themeItems = new List<(RadioMenuFlyoutItem Item, string Value)>();
+        foreach (var (label, value) in new[] { ("Dark", "dark"), ("Light", "light"), ("Use Windows setting", "system") })
+        {
+            var item = new RadioMenuFlyoutItem { Text = label, GroupName = "theme" };
+            item.Click += (_, _) => SetTheme(value);
+            theme.Items.Add(item);
+            themeItems.Add((item, value));
+        }
+        flyout.Opening += (_, _) =>
+        {
+            foreach (var (item, value) in themeItems) item.IsChecked = _settings.Theme == value;
+        };
+        flyout.Items.Add(theme);
+        flyout.Items.Add(new MenuFlyoutSeparator());
+
         flyout.Items.Add(login);
         flyout.Items.Add(auto);
         flyout.Items.Add(notify);
@@ -629,8 +698,21 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        // A new page (navigation, or the first load) shows its skeleton while
+        // its data loads; a refresh of the page already up keeps it on screen,
+        // so a collection landing never flashes anything.
+        var fresh = _page is null;
         var page = _page ??= Create(_route);
-        if (_pageHost.Content is null) _pageHost.Content = Loading();
+        if (Environment.GetEnvironmentVariable("DATAUSAGE_DEBUG_SKELETON") == "1")
+        {
+            // Development only: the skeleton alone, never replaced, so it can be
+            // captured and its height compared with the real page's.
+            _pageHost.Content = SkeletonFor(_route);
+            _scroller.UpdateLayout();
+            ApplyDebugView();
+            return;
+        }
+        if (fresh || _pageHost.Content is null) _pageHost.Content = SkeletonFor(_route);
         try
         {
             await Task.Run(page.Load);
@@ -648,10 +730,12 @@ public sealed partial class MainWindow : Window
         ApplyDebugView();
     }
 
-    private static UIElement Loading()
+    /// <summary>The route's own page, built from stand-in data and turned into a skeleton.</summary>
+    private UIElement SkeletonFor(Route route)
     {
-        var ring = new ProgressRing { IsActive = true, Width = 36, Height = 36, Foreground = Palette.AccentBrush, Margin = new Thickness(0, 120, 0, 0) };
-        return ring;
+        var page = Create(route);
+        page.Placeholder();
+        return page.Build() is FrameworkElement built ? Skeleton.Apply(built) : new Grid();
     }
 
     private static UIElement RenderError(Exception ex)
@@ -694,6 +778,13 @@ public sealed partial class MainWindow : Window
             return;
         }
         _debugApplied = true;
+        // DATAUSAGE_DEBUG_SWITCH_THEME=light|dark switches after the first
+        // build, through the menu's own path, to photograph a live switch.
+        if (Environment.GetEnvironmentVariable("DATAUSAGE_DEBUG_SWITCH_THEME") is { Length: > 0 } theme)
+        {
+            SetTheme(theme);
+            return;
+        }
         var scroll = double.TryParse(parts[^1], out var s) ? s : 0;
         DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
         {

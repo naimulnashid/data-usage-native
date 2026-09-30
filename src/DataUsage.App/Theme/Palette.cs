@@ -5,19 +5,25 @@ using Windows.UI;
 namespace DataUsage.App.Theme;
 
 /// <summary>
-/// The colour tokens: the web dashboard's, one for one. True-black OLED theme,
-/// one accent (Tech Blue), per-app chart colours the only other saturated thing
-/// on screen.
+/// The colour tokens, per theme: the web dashboard's, one for one. Dark is the
+/// true-black OLED theme this app started as; light is its own design, not
+/// the dark one inverted (see <see cref="Light"/>).
 /// </summary>
 /// <remarks>
 /// <para><b>This is the only place any accent colour exists.</b> Never write an
 /// accent hex in a page or a chart: the web dashboard's trend chart once stayed
 /// blue on a green page because a chart carried its own copy.</para>
+/// <para><b>How a theme switch reaches the screen.</b> Every <c>...Brush</c>
+/// here is ONE shared object, retinted in place by <see cref="Apply"/>, so
+/// everything painted with one repaints at once. A <see cref="Color"/> read
+/// while building (a chart's gradient, an app's colour) is baked into what was
+/// built, which is why the window also rebuilds the page after a switch.</para>
 /// <para><b>Red is reserved for genuine anomalies</b> - a failed collector run,
 /// a day well above trend - so it reads as signal, not decoration.</para>
-/// <para>Contrast is measured, not judged: <c>TextFaint</c> (#7c7c88) clears
-/// 4.6:1 on every panel; solid controls use <c>AccentFill</c> (#1570eb, white
-/// on it 4.62:1), never the accent with white (3.87:1).</para>
+/// <para>Contrast is measured, not judged. Dark: <c>TextFaint</c> (#7c7c88)
+/// clears 4.6:1 on every panel; solid controls use <c>AccentFill</c> (#1570eb,
+/// white on it 4.62:1). Light: text-muted 7.7:1 and text-faint 5.3:1 on
+/// white; the accent deepened to #1664d9 (5.4:1) so it reads as text.</para>
 /// </remarks>
 public static class Palette
 {
@@ -35,79 +41,225 @@ public static class Palette
 
     public static Color WithAlpha(Color c, double a) => Color.FromArgb((byte)Math.Round(a * 255), c.R, c.G, c.B);
 
-    public static readonly Color Bg = Hex("#000000");
-    public static readonly Color Surface = Hex("#0a0a0b");
-    public static readonly Color SurfaceHover = Hex("#101012");
-    public static readonly Color Inset = Hex("#08080a");
-    public static readonly Color Border = Hex("#1e1e22");
-    public static readonly Color BorderBright = Hex("#2c2c33");
-    public static readonly Color Grid = Hex("#1a1a1e");
-    public static readonly Color Text = Hex("#f5f5f7");
-    public static readonly Color TextMuted = Hex("#a1a1aa");
-    public static readonly Color TextFaint = Hex("#7c7c88");
-    public static readonly Color TooltipBg = Hex("#0c0c0e");
-    public static readonly Color Warn = Hex("#ff4d4f");
-    public static readonly Color Good = Hex("#22c55e");
-    public static readonly Color RowBorder = Hex("#1e1e22", 0.6);
+    /// <summary>One theme's values. Brushes derive from these in <see cref="Apply"/>.</summary>
+    private sealed record Tokens(
+        Color Bg, Color Surface, Color SurfaceHover, Color Inset, Color Border, Color BorderBright,
+        Color Grid, Color Text, Color TextMuted, Color TextFaint, Color TooltipBg, Color Warn, Color Good,
+        Color RowBorder, Color Accent, Color AccentBright, Color AccentFill, Color Down, Color Up, Color Wired,
+        Color HeatNone, Color HoverWash, Color Plate, string[] Heat,
+        double AccentDim, double AccentBorder, double AccentBorderStrong,
+        double InkMin, double InkMax, double InkTextMin, double InkTextMax);
 
-    public static readonly Color Accent = Hex("#2f80ed");
-    public static readonly Color AccentBright = Hex("#4d97ff");
+    private static readonly Tokens Dark = new(
+        Bg: Hex("#000000"), Surface: Hex("#0a0a0b"), SurfaceHover: Hex("#101012"), Inset: Hex("#08080a"),
+        Border: Hex("#1e1e22"), BorderBright: Hex("#2c2c33"), Grid: Hex("#1a1a1e"),
+        Text: Hex("#f5f5f7"), TextMuted: Hex("#a1a1aa"), TextFaint: Hex("#7c7c88"), TooltipBg: Hex("#0c0c0e"),
+        Warn: Hex("#ff4d4f"), Good: Hex("#22c55e"), RowBorder: Hex("#1e1e22", 0.6),
+        Accent: Hex("#2f80ed"), AccentBright: Hex("#4d97ff"), AccentFill: Hex("#1570eb"),
+        // Download and upload: two shades of the ONE accent, because they are
+        // two halves of one quantity. Darker is download.
+        Down: Mix(Hex("#000000"), Hex("#2f80ed"), 0.78), Up: Mix(Hex("#ffffff"), Hex("#4d97ff"), 0.72),
+        Wired: Mix(Hex("#ffffff"), Hex("#2f80ed"), 0.40),
+        HeatNone: Hex("#0b0b0d"), HoverWash: Hex("#ffffff", 0.04), Plate: Hex("#ececf1"),
+        Heat: ["#131519", "#12325c", "#17488a", "#1f62bd", "#2f80ed", "#6fb0ff"],
+        AccentDim: 0.16, AccentBorder: 0.34, AccentBorderStrong: 0.46,
+        // An app colour is painted within CIE L* 38..100 on black: a user's
+        // black would otherwise vanish. Text in an app's colour: 55..100.
+        InkMin: 38, InkMax: 100, InkTextMin: 55, InkTextMax: 100);
 
     /// <summary>
-    /// Download and upload: two shades of the ONE accent, because they are two
-    /// halves of one quantity - a second hue would read as a second series.
-    /// Darker is download.
+    /// The light theme. What makes a light dashboard read, and what this
+    /// follows: a pale grey canvas under white cards, not white on white; a
+    /// border plus a soft shadow for separation, which unlike on black is
+    /// visible here; hover as elevation; near-black text and measured greys;
+    /// the accent deepened until it reads as text; a heat map that runs light
+    /// to dark; and app colours clamped darker, so near-white brand colours
+    /// (Ollama, Cursor, X) do not vanish into the card.
     /// </summary>
-    public static readonly Color Down = Mix(Hex("#000000"), Accent, 0.78);
-    public static readonly Color Up = Mix(Hex("#ffffff"), AccentBright, 0.72);
+    private static readonly Tokens Light = new(
+        Bg: Hex("#f4f5f7"), Surface: Hex("#ffffff"), SurfaceHover: Hex("#f5f7fa"), Inset: Hex("#eef0f3"),
+        Border: Hex("#e3e5ea"), BorderBright: Hex("#cfd2d9"), Grid: Hex("#eceef2"),
+        Text: Hex("#16171a"), TextMuted: Hex("#52525b"), TextFaint: Hex("#6b6b76"), TooltipBg: Hex("#ffffff"),
+        Warn: Hex("#b42318"), Good: Hex("#15803d"), RowBorder: Hex("#e3e5ea"),
+        Accent: Hex("#1664d9"), AccentBright: Hex("#0f5bc4"), AccentFill: Hex("#1664d9"),
+        Down: Hex("#1664d9"), Up: Mix(Hex("#ffffff"), Hex("#0f5bc4"), 0.45),
+        // Wired is text as well as a fill here, so it stays dark enough to read.
+        Wired: Hex("#3f6fb5"),
+        HeatNone: Hex("#fbfbfc"), HoverWash: Hex("#101828", 0.05), Plate: Hex("#000000", 0),
+        Heat: ["#e9edf3", "#c7dcf8", "#94bdf2", "#5b99e8", "#2a74dc", "#1252b0"],
+        AccentDim: 0.10, AccentBorder: 0.30, AccentBorderStrong: 0.42,
+        InkMin: 0, InkMax: 74, InkTextMin: 0, InkTextMax: 50);
+
+    private static Tokens _t = Dark;
+
+    /// <summary>Whether the light theme is applied.</summary>
+    public static bool IsLight { get; private set; }
+
+    public static Color Bg => _t.Bg;
+    public static Color Surface => _t.Surface;
+    public static Color SurfaceHover => _t.SurfaceHover;
+    public static Color Inset => _t.Inset;
+    public static Color Border => _t.Border;
+    public static Color BorderBright => _t.BorderBright;
+    public static Color Grid => _t.Grid;
+    public static Color Text => _t.Text;
+    public static Color TextMuted => _t.TextMuted;
+    public static Color TextFaint => _t.TextFaint;
+    public static Color TooltipBg => _t.TooltipBg;
+    public static Color Warn => _t.Warn;
+    public static Color Good => _t.Good;
+    public static Color RowBorder => _t.RowBorder;
+    public static Color Accent => _t.Accent;
+    public static Color AccentBright => _t.AccentBright;
+    public static Color Down => _t.Down;
+    public static Color Up => _t.Up;
 
     /// <summary>Wired, on "Where it went": the accent's second shade.</summary>
-    public static readonly Color Wired = Mix(Hex("#ffffff"), Accent, 0.40);
+    public static Color Wired => _t.Wired;
 
     /// <summary>A day with no collected data at all. Neutral: it must never read as a quiet day.</summary>
-    public static readonly Color HeatNone = Hex("#0b0b0d");
+    public static Color HeatNone => _t.HeatNone;
 
-    public static readonly SolidColorBrush BgBrush = new(Bg);
-    public static readonly SolidColorBrush SurfaceBrush = new(Surface);
-    public static readonly SolidColorBrush SurfaceHoverBrush = new(SurfaceHover);
-    public static readonly SolidColorBrush InsetBrush = new(Inset);
-    public static readonly SolidColorBrush BorderBrush = new(Border);
-    public static readonly SolidColorBrush BorderBrightBrush = new(BorderBright);
-    public static readonly SolidColorBrush GridBrush = new(Grid);
-    public static readonly SolidColorBrush TextBrush = new(Text);
-    public static readonly SolidColorBrush TextMutedBrush = new(TextMuted);
-    public static readonly SolidColorBrush TextFaintBrush = new(TextFaint);
-    public static readonly SolidColorBrush TooltipBgBrush = new(TooltipBg);
-    public static readonly SolidColorBrush WarnBrush = new(Warn);
-    public static readonly SolidColorBrush WarnDimBrush = new(Hex("#ff4d4f", 0.14));
-    public static readonly SolidColorBrush WarnBorderBrush = new(Hex("#ff4d4f", 0.34));
-    public static readonly SolidColorBrush GoodBrush = new(Good);
-    public static readonly SolidColorBrush GoodDimBrush = new(Hex("#22c55e", 0.14));
-    public static readonly SolidColorBrush RowBorderBrush = new(RowBorder);
+    public static Color AccentGlow => WithAlpha(_t.Accent, 0.28);
+
+    public static readonly SolidColorBrush BgBrush = new();
+    public static readonly SolidColorBrush SurfaceBrush = new();
+    public static readonly SolidColorBrush SurfaceHoverBrush = new();
+    public static readonly SolidColorBrush InsetBrush = new();
+    public static readonly SolidColorBrush BorderBrush = new();
+    public static readonly SolidColorBrush BorderBrightBrush = new();
+    public static readonly SolidColorBrush GridBrush = new();
+    public static readonly SolidColorBrush TextBrush = new();
+    public static readonly SolidColorBrush TextMutedBrush = new();
+    public static readonly SolidColorBrush TextFaintBrush = new();
+    public static readonly SolidColorBrush TooltipBgBrush = new();
+    public static readonly SolidColorBrush WarnBrush = new();
+    public static readonly SolidColorBrush WarnDimBrush = new();
+    public static readonly SolidColorBrush WarnBorderBrush = new();
+    public static readonly SolidColorBrush GoodBrush = new();
+    public static readonly SolidColorBrush GoodDimBrush = new();
+    public static readonly SolidColorBrush RowBorderBrush = new();
     public static readonly SolidColorBrush TransparentBrush = new(Colors.Transparent);
-    public static readonly SolidColorBrush HoverWashBrush = new(Hex("#ffffff", 0.04));
+    public static readonly SolidColorBrush HoverWashBrush = new();
 
-    public static readonly SolidColorBrush AccentBrush = new(Accent);
-    public static readonly SolidColorBrush AccentBrightBrush = new(AccentBright);
-    public static readonly SolidColorBrush AccentDimBrush = new(Hex("#2f80ed", 0.16));
-    public static readonly SolidColorBrush AccentBorderBrush = new(Hex("#2f80ed", 0.34));
-    public static readonly SolidColorBrush AccentBorderStrongBrush = new(Hex("#2f80ed", 0.46));
-    public static readonly SolidColorBrush AccentFillBrush = new(Hex("#1570eb"));
-    public static readonly SolidColorBrush OnAccentFillBrush = new(Hex("#ffffff"));
-    public static readonly SolidColorBrush DownBrush = new(Down);
-    public static readonly SolidColorBrush UpBrush = new(Up);
-    public static readonly SolidColorBrush WiredBrush = new(Wired);
-    public static readonly SolidColorBrush HeatNoneBrush = new(HeatNone);
+    public static readonly SolidColorBrush AccentBrush = new();
+    public static readonly SolidColorBrush AccentBrightBrush = new();
+    public static readonly SolidColorBrush AccentDimBrush = new();
+    public static readonly SolidColorBrush AccentBorderBrush = new();
+    public static readonly SolidColorBrush AccentBorderStrongBrush = new();
+    public static readonly SolidColorBrush AccentFillBrush = new();
+    public static readonly SolidColorBrush OnAccentFillBrush = new(Colors.White);
+    public static readonly SolidColorBrush DownBrush = new();
+    public static readonly SolidColorBrush UpBrush = new();
+    public static readonly SolidColorBrush WiredBrush = new();
+    public static readonly SolidColorBrush HeatNoneBrush = new();
 
-    public static readonly Color AccentGlow = Hex("#2f80ed", 0.28);
+    /// <summary>
+    /// The plate behind near-black logos (ASUS, OpenCode, Cursor) on black.
+    /// None on the light theme: every logo was rendered on white 2026-09-30
+    /// and all of them read.
+    /// </summary>
+    public static readonly SolidColorBrush PlateBrush = new();
 
     /// <summary>The heat ramp in the accent's own hue family. Step 0 is a real but quiet day.</summary>
-    public static readonly SolidColorBrush[] Heat =
-        new[] { "#131519", "#12325c", "#17488a", "#1f62bd", "#2f80ed", "#6fb0ff" }.Select(h => new SolidColorBrush(Hex(h))).ToArray();
+    public static readonly SolidColorBrush[] Heat = Enumerable.Range(0, 6).Select(_ => new SolidColorBrush()).ToArray();
 
-    /// <summary>An app's chart colour, from the colour map.</summary>
+    /// <summary>Raised after <see cref="Apply"/> changed the theme.</summary>
+    public static event Action? Changed;
+
+    static Palette() => Paint();
+
+    /// <summary>
+    /// Switches theme: retints every shared brush in place, then raises
+    /// <see cref="Changed"/> so the window can rebuild what baked a colour in.
+    /// UI thread only.
+    /// </summary>
+    public static void Apply(bool light)
+    {
+        if (light == IsLight) return;
+        IsLight = light;
+        _t = light ? Light : Dark;
+        Paint();
+        Changed?.Invoke();
+    }
+
+    private static void Paint()
+    {
+        BgBrush.Color = _t.Bg;
+        SurfaceBrush.Color = _t.Surface;
+        SurfaceHoverBrush.Color = _t.SurfaceHover;
+        InsetBrush.Color = _t.Inset;
+        BorderBrush.Color = _t.Border;
+        BorderBrightBrush.Color = _t.BorderBright;
+        GridBrush.Color = _t.Grid;
+        TextBrush.Color = _t.Text;
+        TextMutedBrush.Color = _t.TextMuted;
+        TextFaintBrush.Color = _t.TextFaint;
+        TooltipBgBrush.Color = _t.TooltipBg;
+        WarnBrush.Color = _t.Warn;
+        WarnDimBrush.Color = WithAlpha(_t.Warn, IsLight ? 0.10 : 0.14);
+        WarnBorderBrush.Color = WithAlpha(_t.Warn, 0.34);
+        GoodBrush.Color = _t.Good;
+        GoodDimBrush.Color = WithAlpha(_t.Good, IsLight ? 0.10 : 0.14);
+        RowBorderBrush.Color = _t.RowBorder;
+        HoverWashBrush.Color = _t.HoverWash;
+        AccentBrush.Color = _t.Accent;
+        AccentBrightBrush.Color = _t.AccentBright;
+        AccentDimBrush.Color = WithAlpha(_t.Accent, _t.AccentDim);
+        AccentBorderBrush.Color = WithAlpha(_t.Accent, _t.AccentBorder);
+        AccentBorderStrongBrush.Color = WithAlpha(_t.Accent, _t.AccentBorderStrong);
+        AccentFillBrush.Color = _t.AccentFill;
+        DownBrush.Color = _t.Down;
+        UpBrush.Color = _t.Up;
+        WiredBrush.Color = _t.Wired;
+        HeatNoneBrush.Color = _t.HeatNone;
+        PlateBrush.Color = _t.Plate;
+        for (var i = 0; i < Heat.Length; i++) Heat[i].Color = Hex(_t.Heat[i]);
+    }
+
+    /// <summary>An app's colour as PAINTED on the current theme: see <see cref="Ink(string)"/>.</summary>
     public static Color App(IReadOnlyDictionary<string, string> map, string name) =>
-        Hex(Core.Naming.AppColors.Of(map, name));
+        Ink(Core.Naming.AppColors.Of(map, name));
+
+    /// <summary>An app's colour for TEXT, which needs a darker band on white than a fill does.</summary>
+    public static Color AppText(IReadOnlyDictionary<string, string> map, string name) =>
+        InkText(Core.Naming.AppColors.Of(map, name));
+
+    /// <summary>
+    /// A stored colour as painted: its CIE L* held inside the theme's band,
+    /// its hue kept. Brand colours were chosen against black, and seven are
+    /// near-white (Ollama, Cursor, OpenCode, X, Threads, OBS, GitHub) - white
+    /// bars on a white card. A user's colour can fail the other way, black on
+    /// black. The web dashboard does the same with CSS relative colours.
+    /// </summary>
+    public static Color Ink(string hex) => Clamp(hex, _t.InkMin, _t.InkMax);
+
+    /// <summary>The same band, for text in a stored colour.</summary>
+    public static Color InkText(string hex) => Clamp(hex, _t.InkTextMin, _t.InkTextMax);
+
+    private static Color Clamp(string hex, double min, double max)
+    {
+        if (!Core.Naming.AppColors.TryParse(hex, out var rgb)) rgb = (0x4b, 0x4b, 0x55);
+        var l = Core.Naming.AppColors.Lightness(rgb);
+        if (l >= min && l <= max) return Color.FromArgb(255, (byte)rgb.R, (byte)rgb.G, (byte)rgb.B);
+        // Blend toward black (too light) or white (too dark) by the least that
+        // lands inside the band: a bisection on the blend fraction.
+        var toward = l > max ? 0 : 255;
+        var target = l > max ? max : min;
+        double lo = 0, hi = 1;
+        (int R, int G, int B) Blend(double t) => (
+            (int)Math.Round(rgb.R + (toward - rgb.R) * t),
+            (int)Math.Round(rgb.G + (toward - rgb.G) * t),
+            (int)Math.Round(rgb.B + (toward - rgb.B) * t));
+        for (var i = 0; i < 18; i++)
+        {
+            var mid = (lo + hi) / 2;
+            var lm = Core.Naming.AppColors.Lightness(Blend(mid));
+            if (toward == 0 ? lm > target : lm < target) lo = mid; else hi = mid;
+        }
+        var c = Blend(hi);
+        return Color.FromArgb(255, (byte)c.R, (byte)c.G, (byte)c.B);
+    }
 
     public static Color HexOrOther(string hex) => Core.Naming.AppColors.TryParse(hex, out _) ? Hex(hex) : Hex(Core.Naming.AppColors.Other);
 }

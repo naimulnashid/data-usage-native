@@ -146,4 +146,56 @@ public class ViewTests
         Renames.Save(t.Conn, "edge", "", current, "Microsoft Edge");
         Assert.Equal("Microsoft Edge", q.ByApp(Scope.All).Apps[0].Name);
     }
+
+    [Theory]
+    [InlineData(6, 12, "1 … 4 5 6 7 8 … 12")]
+    [InlineData(2, 12, "1 2 3 4 … 12")]
+    [InlineData(12, 12, "1 … 10 11 12")]
+    [InlineData(4, 12, "1 2 3 4 5 6 … 12")]
+    [InlineData(3, 5, "1 2 3 4 5")]
+    [InlineData(1, 1, "1")]
+    [InlineData(99, 12, "1 … 10 11 12")]
+    public void PagerShowsTheEndsAndItsNeighbours(int page, int count, string expected) =>
+        Assert.Equal(expected, string.Join(" ", Pages.Items(page, count).Select(i => i is { } n ? n.ToString(System.Globalization.CultureInfo.InvariantCulture) : "…")));
+
+    [Theory]
+    [InlineData("#2F80ED", "#2f80ed")]
+    [InlineData("2f80ed", "#2f80ed")]
+    [InlineData(" #abc ", "#aabbcc")]
+    [InlineData("red", null)]
+    [InlineData("#12345", null)]
+    [InlineData("#1234567", null)]
+    [InlineData("#2f80ed;x", null)]
+    [InlineData("", null)]
+    public void ColoursAcceptOnlyAHexCode(string raw, string? expected) =>
+        Assert.Equal(expected, ColorOverrides.Clean(raw));
+
+    [Fact]
+    public void AChosenColourWinsAndSurvivesARename()
+    {
+        using var t = new TestDb();
+        UsageDb.InsertRows(t.Conn,
+        [
+            TestDb.Row("2026-09-01T10:01:00Z", 617, @"\device\harddiskvolume4\x\msedge.exe", 1, 100),
+            TestDb.Row("2026-09-01T10:01:00Z", 618, @"\device\harddiskvolume4\x\chrome.exe", 1, 10),
+        ]);
+        var q = new UsageQueries(t.Path_);
+        var known = q.AppNamesByKey().Keys.ToHashSet();
+
+        Assert.Equal(ColorError.UnknownApp, ColorOverrides.Save(t.Conn, "nope", "#123456", known).Error);
+        Assert.Equal(ColorError.BadColor, ColorOverrides.Save(t.Conn, "edge", "blue", known).Error);
+        Assert.Equal((ColorError.None, "#e91e63"), ColorOverrides.Save(t.Conn, "edge", "#E91E63", known));
+        Assert.Equal("#e91e63", q.ColorMap()["Microsoft Edge"]);
+        Assert.Equal("#e91e63", q.ColorOverrideMap()["edge"]);
+
+        // Under a new name too: the override is keyed by the family, not the label.
+        var current = q.AppNamesByKey().ToDictionary(kv => kv.Key, kv => kv.Value.Name);
+        Renames.Save(t.Conn, "edge", "Edge", current, "Microsoft Edge");
+        Assert.Equal("#e91e63", q.ColorMap()["Edge"]);
+
+        // An empty colour clears it, back to the brand.
+        Assert.Equal((ColorError.None, null), ColorOverrides.Save(t.Conn, "edge", "", known));
+        Assert.Equal("#0078D7", q.ColorMap()["Edge"]);
+        Assert.Empty(q.ColorOverrideMap());
+    }
 }

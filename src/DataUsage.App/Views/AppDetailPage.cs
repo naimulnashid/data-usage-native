@@ -35,6 +35,12 @@ public sealed class AppDetailPage(PageContext ctx, string key) : IPage
         _eligible = _app is not null && UsageQueries.EarnsDetailPage(_app.Totals.Total, _app.Days);
     }
 
+    public void Placeholder()
+    {
+        _app = Views.Placeholder.App(key);
+        _exists = _eligible = true;
+    }
+
     public UIElement Build()
     {
         var page = new StackPanel();

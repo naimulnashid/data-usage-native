@@ -34,10 +34,12 @@ $sizing = @(if ($FullPage -gt 0) { '-AppSized' } else { '-Width', $Width, '-Heig
 
 foreach ($view in $Views) {
   $name, $spec = $view -split '=', 2
-  $hoverX = -1; $hoverY = -1
-  if ($spec -match '^(.*)@(\d+):(\d+)$') { $spec = $Matches[1]; $hoverX = [int]$Matches[2]; $hoverY = [int]$Matches[3] }
+  $hoverX = -1; $hoverY = -1; $click = $false
+  # "@x:y" hovers there; "@x:y!" also clicks, and captures what that opens.
+  if ($spec -match '^(.*)@(\d+):(\d+)(!?)$') { $spec = $Matches[1]; $hoverX = [int]$Matches[2]; $hoverY = [int]$Matches[3]; $click = $Matches[4] -eq '!' }
+  $clickArg = @(if ($click) { '-Click' })
   $env:DATAUSAGE_DEBUG_VIEW = $spec
   # Windows PowerShell 5.1, which has System.Drawing built in.
-  powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Capture-Window.ps1') -Exe $exe -Out (Join-Path $root "screenshots\$name.png") @sizing -WaitSeconds $WaitSeconds -HoverX $hoverX -HoverY $hoverY -Close
+  powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Capture-Window.ps1') -Exe $exe -Out (Join-Path $root "screenshots\$name.png") @sizing -WaitSeconds $WaitSeconds -HoverX $hoverX -HoverY $hoverY @clickArg -Close
   Start-Sleep -Milliseconds 800
 }
