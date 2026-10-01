@@ -1,5 +1,9 @@
 # Data Usage (native)
 
+[![CI](https://github.com/naimulnashid/data-usage-native/actions/workflows/ci.yml/badge.svg)](https://github.com/naimulnashid/data-usage-native/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/naimulnashid/data-usage-native)](https://github.com/naimulnashid/data-usage-native/releases/latest)
+[![MIT license](https://img.shields.io/github/license/naimulnashid/data-usage-native)](LICENSE)
+
 A native Windows app that keeps a **permanent history of how much data each
 app on this PC uses**. Windows already measures it (Settings → Network &
 Internet → Data usage) but keeps only a month or two, and a Windows reset
