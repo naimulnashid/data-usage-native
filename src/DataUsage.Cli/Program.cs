@@ -91,7 +91,7 @@ public static class Program
         }
         Console.WriteLine($"local       : {AppPaths.LocalDir}");
         Console.WriteLine($"scratch     : {AppPaths.ScratchDir}");
-        Console.WriteLine($"snapshot    : {AppPaths.SnapshotDir}");
+        Console.WriteLine($"snapshot    : {ScheduledTasks.SnapshotDir}");
         foreach (var t in new[] { ScheduledTasks.CollectorTask, ScheduledTasks.SnapshotTask })
         {
             var info = ScheduledTasks.Query(t);

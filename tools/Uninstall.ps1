@@ -6,12 +6,13 @@
   Closes the installed copy (by the path it runs from, never by name), then
   removes the program folder, the Start menu shortcut, the start-at-login
   entry and the Installed apps entry, and - behind one UAC prompt - the two
-  scheduled tasks and %ProgramData%\Data Usage Native.
+  scheduled tasks and the snapshot folder (DataUsageNative-snapshot on the
+  data drive, or %ProgramData%\Data Usage Native).
 
   THE HISTORY IS NEVER TOUCHED. The data folder (the database, its backup,
   logos, settings) is the thing this app exists to keep; delete it by hand if
-  you mean to. -RemoveData removes only %LOCALAPPDATA%\Data Usage Native:
-  preferences, logs and scratch.
+  you mean to. -RemoveData removes only %LOCALAPPDATA%\Data Usage Native
+  (preferences, logs) and scratch, which every run empties anyway.
 
   Install.ps1 copies this script into the program folder and registers it as
   the uninstall command, so Installed apps can remove the app without the
@@ -80,6 +81,12 @@ try {
   if ($RemoveData -and (Test-Path $localDir)) {
     Remove-Item $localDir -Recurse -Force
     Write-Host "Removed $localDir"
+  }
+  # AppPaths.ScratchDir: at the data drive's root unless that is the system drive.
+  $scratch = if ($dataDir) { Join-Path ([IO.Path]::GetPathRoot($dataDir)) 'DataUsageNative-scratch' } else { $null }
+  if ($RemoveData -and $scratch -and (Test-Path -LiteralPath (Join-Path $scratch '.data-usage-scratch'))) {
+    Remove-Item -LiteralPath $scratch -Recurse -Force
+    Write-Host "Removed $scratch"
   }
   Write-Host 'Data Usage is uninstalled.' -ForegroundColor Green
   if ($dataDir) { Write-Host "Your history in $dataDir was kept. Reinstalling and pointing at it brings it all back." }

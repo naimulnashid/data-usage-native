@@ -49,6 +49,28 @@ public static class ScheduledTasks
         return new TaskInfo(true, (int)task.State == TaskStateRunning, Time((DateTime)task.LastRunTime), (int)task.LastTaskResult, Time((DateTime)task.NextRunTime));
     }
 
+    /// <summary>
+    /// Where the snapshot task writes: its action's working directory, which
+    /// <c>Register-Tasks.ps1</c> sets to the directory it created, so the path
+    /// an administrator approved is the one source of truth. Falls back to
+    /// <see cref="AppPaths.SnapshotDir"/> for a task registered without one.
+    /// </summary>
+    public static string SnapshotDir
+    {
+        get
+        {
+            try
+            {
+                var actions = Find(SnapshotTask)?.Definition.Actions;
+                if (actions is not null && (int)actions.Count > 0 && actions.Item(1).WorkingDirectory is string dir && dir.Length > 0)
+                    return dir;
+            }
+            catch (COMException) { }
+            catch (Microsoft.CSharp.RuntimeBinder.RuntimeBinderException) { }
+            return AppPaths.SnapshotDir;
+        }
+    }
+
     /// <summary>Start a registered task now. Needs no elevation, even for an elevated task.</summary>
     public static void Run(string name)
     {

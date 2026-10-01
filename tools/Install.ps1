@@ -17,7 +17,12 @@
   4. Points the app at its data folder (-DataDir), unless one is already set.
   5. Starts tools\Register-Tasks.ps1 elevated, which registers the collector
      (unelevated, every 15 minutes) and the snapshot task (the one elevated
-     step). This is the UAC prompt.
+     step). This is the UAC prompt. The snapshot task writes under
+     -SnapshotRoot: by default DataUsageNative-snapshot at the root of the
+     data folder's drive, or %ProgramData% when that is the system drive or
+     not NTFS. The
+     collector's scratch follows the same rule (AppPaths.ScratchDir), so the
+     hourly 99 MB copies stay off C: and its System Restore shadow copies.
 
   Re-running updates the installed copy and re-registers the tasks. After a
   Windows reset, re-running it is the whole recovery: point -DataDir at the
@@ -32,6 +37,7 @@
 #>
 param(
   [string]$DataDir = 'D:\PersistentData\data-usage-native',
+  [string]$SnapshotRoot,
   [switch]$Uninstall,
   [switch]$RemoveData,
   [switch]$SkipTasks
@@ -155,6 +161,22 @@ if (-not $SkipTasks) {
   # The exported definitions are a record kept in a clone; a release zip has
   # nowhere to keep them.
   if (-not $packaged) { $elevated += @('-ExportDir', "`"$(Join-Path $root 'tools\task')`"") }
+  if (-not $SnapshotRoot -and (Test-Path $location)) {
+    # The data folder actually in use, which an earlier install or the setup
+    # screen may have set to something other than -DataDir.
+    $inUse = (Get-Content $location -Raw | ConvertFrom-Json).dataDir
+    $driveRoot = if ($inUse) { [IO.Path]::GetPathRoot([IO.Path]::GetFullPath($inUse)) } else { $null }
+    # NTFS only: Register-Tasks.ps1 locks the folder down with an ACL, which
+    # exFAT and FAT drives cannot hold, and it would refuse the folder.
+    if ($driveRoot -and $driveRoot -ine [IO.Path]::GetPathRoot($env:SystemRoot) -and (Test-Path -LiteralPath $driveRoot) -and
+        ([IO.DriveInfo]::new($driveRoot)).DriveFormat -eq 'NTFS') {
+      $SnapshotRoot = Join-Path $driveRoot 'DataUsageNative-snapshot'
+    }
+  }
+  if ($SnapshotRoot) {
+    $elevated += @('-SnapshotRoot', "`"$SnapshotRoot`"")
+    Write-Host "Snapshot folder: $SnapshotRoot"
+  }
   $p = Start-Process powershell.exe -Verb RunAs -ArgumentList $elevated -Wait -PassThru
   if ($p.ExitCode -ne 0) { throw "Registering the scheduled tasks failed (exit $($p.ExitCode)). Nothing will collect until it succeeds: re-run this script." }
   Write-Host 'Scheduled tasks registered.'

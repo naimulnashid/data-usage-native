@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using DataUsage.Core.Data;
 using DataUsage.Core.Srum;
 
@@ -233,7 +235,7 @@ public static class Collector
     /// </summary>
     private static void TakeSnapshot(string destination, RunLog log)
     {
-        var work = AppPaths.SnapshotDir;
+        var work = ScheduledTasks.SnapshotDir;
         var status = Path.Combine(work, "status.txt");
         var info = ScheduledTasks.Query(ScheduledTasks.SnapshotTask);
         if (!info.Exists)
@@ -290,8 +292,31 @@ public static class Collector
     private static void PrepareScratch(string scratch)
     {
         ClearScratch(scratch);
-        Directory.CreateDirectory(scratch);
+        CreatePrivate(scratch);
         File.WriteAllText(Path.Combine(scratch, ScratchMarker), "Scratch for the Data Usage collector. Safe to delete; it is cleared every run.\r\n");
+    }
+
+    /// <summary>
+    /// Scratch holds the raw usage history. Under %LOCALAPPDATA% it was private
+    /// by inheritance; at a drive root (<see cref="AppPaths.ScratchDir"/>) it
+    /// would inherit "Authenticated Users: Modify". So it gets its own ACL:
+    /// this user, SYSTEM and Administrators, nothing inherited.
+    /// </summary>
+    private static void CreatePrivate(string dir)
+    {
+        var security = new DirectorySecurity();
+        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        foreach (var sid in new[]
+                 {
+                     WindowsIdentity.GetCurrent().User!,
+                     new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+                     new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
+                 })
+        {
+            security.AddAccessRule(new FileSystemAccessRule(sid, FileSystemRights.FullControl,
+                InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+        }
+        new DirectoryInfo(dir).Create(security);
     }
 
     private static void ClearScratch(string scratch)

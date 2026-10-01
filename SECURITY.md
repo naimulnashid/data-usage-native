@@ -18,8 +18,9 @@ are local ones:
 - **The elevated task.** `Data Usage Native Snapshot` runs as Administrator,
   and runs only `cmd.exe` and `esentutl.exe` from `System32` with every
   argument fixed at registration. Any way for a non-administrator to make it
-  run something of their choosing, or to steer its writes outside
-  `%ProgramData%\Data Usage Native\work`, is in scope.
+  run something of their choosing, or to steer its writes outside the `work`
+  folder it was registered with (`DataUsageNative-snapshot\work` on the data
+  drive, or `%ProgramData%\Data Usage Native\work`), is in scope.
 - **The collector task and the app**, which run as the signed-in user and
   read the SRUM snapshot the elevated task leaves behind. Anything that lets
   another local account read or alter that snapshot or the usage database is
