@@ -38,11 +38,9 @@ public static class AppPaths
     /// and the local folder's <c>scratch</c> only when the data folder is on the
     /// system drive or <c>DATAUSAGE_LOCAL_DIR</c> is set (demo and test runs).
     /// <para>Not the system drive, because every hourly read writes ~99 MB plus
-    /// journal replay there and deletes it, while C: carries System Restore
-    /// shadow copies. From 2026-09-12 to 09-30 every Fast Startup shutdown that
-    /// stalled (19-119 s, screen off, fans on) logged Volsnap event 25 - shadow
-    /// storage "could not grow in time", every restore point deleted - and none
-    /// before the trackers did. That churn is the likeliest feed.</para>
+    /// journal replay there and deletes it - about 5 GB a day of churn on the
+    /// drive Windows itself runs from, often the smallest and fullest one, and
+    /// the one System Restore's shadow copies live on.</para>
     /// </summary>
     public static string ScratchDir =>
         Environment.GetEnvironmentVariable(LocalDirVariable) is not { Length: > 0 }
