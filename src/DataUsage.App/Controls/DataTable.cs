@@ -19,8 +19,10 @@ public sealed record Column(string Header, (string Label, string Text)? Tip = nu
 /// <summary>
 /// A data table in the dashboard's style: small uppercase headers, figures
 /// right-aligned in tabular digits, rows ruled faintly and lit on hover, and a
-/// footer row ruled a shade brighter. Wider than its panel, it scrolls sideways
-/// rather than squeezing.
+/// footer row ruled a shade brighter. It is exactly as wide as its panel and
+/// never narrower than <see cref="MinWidth"/>: below that it scrolls sideways
+/// rather than squeezing, and a long name never widens it - the text is cut
+/// with an ellipsis and its full value is the tooltip.
 /// </summary>
 public sealed class DataTable
 {
@@ -126,6 +128,14 @@ public sealed class DataTable
                 content.HorizontalAlignment = _columns[i].IsLeft(i) ? HorizontalAlignment.Left : HorizontalAlignment.Right;
             content.VerticalAlignment = VerticalAlignment.Center;
             content.Margin = new Thickness(14, RowPadding, 14, RowPadding);
+            // Ui.Text already trims with an ellipsis; a cut cell shows its full
+            // text on hover. Only once cut, so a figure carries no tooltip, and
+            // never over a tooltip the caller chose.
+            if (content is TextBlock text && ToolTipService.GetToolTip(text) is null)
+            {
+                text.IsTextTrimmedChanged += (_, _) =>
+                    ToolTipService.SetToolTip(text, text.IsTextTrimmed ? Ui.TipContent(text.Text) : null);
+            }
             // Cells stay hit-testable (a swatch carries a tooltip), so they
             // light the row too.
             content.PointerEntered += Lit;
@@ -139,10 +149,18 @@ public sealed class DataTable
     public int RowCount => _row - 1;
 
     /// <summary>The table in its sideways scroller.</summary>
+    /// <remarks>
+    /// A horizontally scrolling <see cref="ScrollViewer"/> measures its content
+    /// at infinite width, so left alone the star column sizes to its longest
+    /// cell and nothing ever trims: one 1,300 px SRUM path in Grouped from put
+    /// a scroll bar under the whole table. Pinning the grid to the viewer's
+    /// width gives the star column a real width to trim to; the viewer still
+    /// scrolls when the panel is narrower than <see cref="MinWidth"/>.
+    /// </remarks>
     public ScrollViewer Build()
     {
         _grid.MinWidth = MinWidth;
-        return new ScrollViewer
+        var viewer = new ScrollViewer
         {
             Content = _grid,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
@@ -150,5 +168,7 @@ public sealed class DataTable
             VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
             VerticalScrollMode = ScrollMode.Disabled,
         };
+        viewer.SizeChanged += (_, e) => _grid.Width = Math.Max(MinWidth, e.NewSize.Width);
+        return viewer;
     }
 }
