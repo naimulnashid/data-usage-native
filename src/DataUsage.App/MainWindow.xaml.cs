@@ -36,8 +36,9 @@ public sealed partial class MainWindow : Window
     private readonly StackPanel _chips = new() { Orientation = Orientation.Horizontal, Spacing = 7, VerticalAlignment = VerticalAlignment.Center };
     private readonly Button _sync;
     private readonly TextBlock _syncText = Ui.Text("Sync now", 15, 500, Palette.TextMutedBrush, selectable: false);
-    private readonly Microsoft.UI.Xaml.Shapes.Ellipse _syncDot = new() { Width = 8, Height = 8, Fill = Palette.AccentBrush, VerticalAlignment = VerticalAlignment.Center };
-    private readonly ProgressRing _syncRing = new() { Width = 13, Height = 13, IsActive = false, Visibility = Visibility.Collapsed, Foreground = Palette.AccentBrightBrush };
+    private readonly RotateTransform _syncTurn = new() { CenterX = 12, CenterY = 12 };
+    private readonly Microsoft.UI.Xaml.Shapes.Path _syncIcon;
+    private Microsoft.UI.Xaml.Media.Animation.Storyboard? _syncSpin;
     private readonly ScrollViewer _scroller = new() { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
     private readonly ContentControl _pageHost = new() { HorizontalContentAlignment = HorizontalAlignment.Stretch, IsTabStop = false };
     private Grid _frame = null!;
@@ -55,6 +56,18 @@ public sealed partial class MainWindow : Window
         _settings = settings;
         _exit = exit;
         _ctx = new PageContext { State = state, Navigate = Navigate, Redraw = () => Rebuild(keepScroll: true), Window = this };
+        _syncIcon = new Microsoft.UI.Xaml.Shapes.Path
+        {
+            Data = SyncArrows(),
+            Width = 24,
+            Height = 24,
+            Stroke = Palette.TextMutedBrush,
+            StrokeThickness = 2.2,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            StrokeLineJoin = PenLineJoin.Round,
+            RenderTransform = _syncTurn,
+        };
         _sync = BuildSyncButton();
 
         Zoom.Set(settings.Zoom);
@@ -382,8 +395,7 @@ public sealed partial class MainWindow : Window
     private Button BuildSyncButton()
     {
         var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        content.Children.Add(_syncDot);
-        content.Children.Add(_syncRing);
+        content.Children.Add(new Viewbox { Width = 13, Height = 13, VerticalAlignment = VerticalAlignment.Center, Child = _syncIcon });
         content.Children.Add(_syncText);
         var button = new Button
         {
@@ -399,8 +411,8 @@ public sealed partial class MainWindow : Window
         button.Resources["ButtonBorderBrushPointerOver"] = Palette.TextFaintBrush;
         button.Resources["ButtonBackgroundDisabled"] = Palette.TransparentBrush;
         button.Resources["ButtonBorderBrushDisabled"] = Palette.BorderBrightBrush;
-        button.PointerEntered += (_, _) => { if (!_syncing) _syncText.Foreground = Palette.TextBrush; };
-        button.PointerExited += (_, _) => { if (!_syncing) _syncText.Foreground = Palette.TextMutedBrush; };
+        button.PointerEntered += (_, _) => { if (!_syncing) SyncInk(Palette.TextBrush); };
+        button.PointerExited += (_, _) => { if (!_syncing) SyncInk(Palette.TextMutedBrush); };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, "Sync now: collect from Windows' usage database immediately");
         ToolTipService.SetToolTip(button, Ui.TipContent("Collect now instead of waiting for the hourly task. Takes about half a minute: Windows' usage database is copied, recovered and read."));
         button.Click += async (_, _) => await SyncNowAsync();
@@ -413,11 +425,9 @@ public sealed partial class MainWindow : Window
         if (_syncing || _state.DataDir is null) return;
         _syncing = true;
         _sync.IsEnabled = false;
-        _syncDot.Visibility = Visibility.Collapsed;
-        _syncRing.Visibility = Visibility.Visible;
-        _syncRing.IsActive = true;
+        SpinSyncIcon(true);
         _syncText.Text = "Syncing…";
-        _syncText.Foreground = Palette.AccentBrightBrush;
+        SyncInk(Palette.AccentBrightBrush);
         string? last = null;
         var code = await _state.CollectNowAsync(message =>
         {
@@ -426,12 +436,9 @@ public sealed partial class MainWindow : Window
         });
         _syncing = false;
         _sync.IsEnabled = true;
-        _syncRing.IsActive = false;
-        _syncRing.Visibility = Visibility.Collapsed;
-        _syncDot.Visibility = Visibility.Visible;
-        _syncDot.Fill = code == 0 ? Palette.AccentBrush : Palette.WarnBrush;
+        SpinSyncIcon(false);
         _syncText.Text = code == 0 ? "Synced" : "Sync failed";
-        _syncText.Foreground = code == 0 ? Palette.TextMutedBrush : Palette.WarnBrush;
+        SyncInk(code == 0 ? Palette.TextMutedBrush : Palette.WarnBrush);
         if (code != 0 && !_inTray) await Shell.ShowMessage(this, "Sync failed", last ?? "The collector reported a failure. See Sync Status.");
         var timer = DispatcherQueue.CreateTimer();
         timer.Interval = TimeSpan.FromSeconds(4);
@@ -440,10 +447,63 @@ public sealed partial class MainWindow : Window
         {
             if (_syncing) return;
             _syncText.Text = "Sync now";
-            _syncText.Foreground = Palette.TextMutedBrush;
-            _syncDot.Fill = Palette.AccentBrush;
+            SyncInk(Palette.TextMutedBrush);
         };
         timer.Start();
+    }
+
+    /// <summary>The icon is drawn in the label's colour, like the web's `currentColor`.</summary>
+    private void SyncInk(Brush brush)
+    {
+        _syncText.Foreground = brush;
+        _syncIcon.Stroke = brush;
+    }
+
+    /// <summary>Turns the arrows while a collection runs; still when Windows has animations off.</summary>
+    private void SpinSyncIcon(bool on)
+    {
+        _syncSpin?.Stop();
+        _syncSpin = null;
+        _syncTurn.Angle = 0;
+        if (!on || !Motion.Enabled) return;
+        var turn = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
+        {
+            From = 0,
+            To = 360,
+            Duration = new Duration(TimeSpan.FromMilliseconds(900)),
+            RepeatBehavior = Microsoft.UI.Xaml.Media.Animation.RepeatBehavior.Forever,
+        };
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(turn, _syncTurn);
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(turn, "Angle");
+        _syncSpin = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
+        _syncSpin.Children.Add(turn);
+        _syncSpin.Begin();
+    }
+
+    /// <summary>
+    /// The web dashboard's sync arrows, in its 24-unit square, so the two
+    /// buttons draw the same mark. SVG arc sweep 1 is clockwise here.
+    /// </summary>
+    private static Geometry SyncArrows()
+    {
+        static PathFigure Open(Windows.Foundation.Point start) => new() { StartPoint = start, IsClosed = false, IsFilled = false };
+        static LineSegment To(double x, double y) => new() { Point = new Windows.Foundation.Point(x, y) };
+        static ArcSegment Arc(double x, double y, SweepDirection sweep) =>
+            new() { Point = new Windows.Foundation.Point(x, y), Size = new Windows.Foundation.Size(9, 9), SweepDirection = sweep };
+
+        var right = Open(new(23, 4));
+        right.Segments.Add(To(23, 10));
+        right.Segments.Add(To(17, 10));
+        var left = Open(new(1, 20));
+        left.Segments.Add(To(1, 14));
+        left.Segments.Add(To(7, 14));
+        var top = Open(new(3.51, 9));
+        top.Segments.Add(Arc(18.36, 5.64, SweepDirection.Clockwise));
+        top.Segments.Add(To(23, 10));
+        var bottom = Open(new(1, 14));
+        bottom.Segments.Add(To(5.64, 18.36));
+        bottom.Segments.Add(Arc(20.49, 15, SweepDirection.Counterclockwise));
+        return new PathGeometry { Figures = { right, left, top, bottom } };
     }
 
     /// <summary>A collector log line, as a few words for the button.</summary>
