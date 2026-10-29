@@ -167,18 +167,19 @@ folder). Set both, or a demo run writes into your real preferences.
 - **Sync now** (top bar or tray) collects immediately; otherwise the collector
   runs every 15 minutes and reads Windows' database hourly.
 - **Choose a range** for a daily chart from the menu at its top right.
-- **Rename an app, or change its colour**: the pencil beside its name (hover a
-  table row or card). Pick a colour or type its hex code; "Default colour" goes
-  back. Both are stored with the history.
-- **Hide or merge an app**: the "..." beside the pencil. A hidden app leaves By
+- **Rename an app, or change its colour**: the "..." beside its name (hover a
+  table row or card, or on the app's own page), then **Rename or recolour…**.
+  Pick a colour or type its hex code; "Default colour" goes back. Both are
+  stored with the history.
+- **Hide or merge an app**: the same "..." on By App. A hidden app leaves By
   App and nothing else, so every total still counts it; **Show N hidden** lists
   them again. A merged app is counted as part of the other everywhere, and that
   app's **Merged apps** card has a Separate button to undo it.
 - **Table or grid** on By App: the switch at the top right of the Apps card.
 - **Click a Top 10 bar or a card** to open that app's page; **Backspace** goes
   back.
-- **Logos**: in the pencil menu choose **Set logo…**, or drop an image on the
-  app's name or card. Files dropped into the data folder's `logos\` work too.
+- **Logos**: in the "..." menu choose **Set logo…** (or **Remove logo**), or
+  drop an image on the app's name or card. Files dropped into the data folder's `logos\` work too.
 - **Zoom** like a browser: **Ctrl+Plus**, **Ctrl+Minus**, **Ctrl+mouse wheel**,
   **Ctrl+0** to reset (remembered). Also in the settings menu.
 - **Tray**: closing the window keeps the app in the notification area.

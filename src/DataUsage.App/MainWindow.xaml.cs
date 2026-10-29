@@ -232,7 +232,7 @@ public sealed partial class MainWindow : Window
         Root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
         // Title bar: draggable, the app's mark and name, room for the caption buttons.
-        var titleBar = new Grid { Background = Palette.BgBrush, Padding = new Thickness(16, 0, 150, 0) };
+        var titleBar = new Grid { Background = Palette.ChromeBrush, Padding = new Thickness(16, 0, 150, 0) };
         var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, VerticalAlignment = VerticalAlignment.Center };
         var icon = new Image { Width = 16, Height = 16 };
         title.Children.Add(icon);
@@ -400,7 +400,7 @@ public sealed partial class MainWindow : Window
             MinHeight = 61,
             BorderBrush = Palette.BorderBrush,
             BorderThickness = new Thickness(0, 1, 0, 1),
-            Background = Palette.BgBrush,
+            Background = Palette.ChromeBrush,
             Child = grid,
         };
     }
@@ -688,7 +688,7 @@ public sealed partial class MainWindow : Window
         exit.Click += (_, _) => _exit();
         flyout.Items.Add(exit);
 
-        button.Flyout = flyout;
+        button.Flyout = Ui.Menu(flyout);
         return button;
     }
 

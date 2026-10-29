@@ -24,57 +24,35 @@ namespace DataUsage.App.Views;
 /// <para>A colour is stored beside the renames (<see cref="ColorOverrides"/>)
 /// and wins over the brand and palette colours everywhere the app is drawn.
 /// Picked on the spectrum or typed as a hex code; "Default colour" drops it.</para>
+/// <para>Rename and colour share one dialog, opened from the "..." menu. It
+/// used to be a flyout that also carried the logo buttons; the logo now has
+/// its own items in that menu, Set logo and Remove logo.</para>
 /// <para>A logo is a file in the data folder's logos\, named after the app. Set
 /// logo copies one in; dropping an image on the name does the same.</para>
 /// </remarks>
 public static class AppActions
 {
-    /// <summary>The pencil beside a name, faint until the pointer is near.</summary>
-    public static Button Pencil(PageContext ctx, string key, string name, string baseName, double size = 14, bool alwaysVisible = false)
+    /// <summary>
+    /// The rename-and-recolour dialog. Modal, so the table or grid behind it
+    /// keeps its shape; a refused name or colour keeps it open with the reason.
+    /// </summary>
+    public static async Task EditAsync(PageContext ctx, string key, string name, string baseName)
     {
-        var button = new Button
-        {
-            Content = new FontIcon { Glyph = "", FontSize = size, Foreground = Palette.TextFaintBrush },
-            Padding = new Thickness(5),
-            MinWidth = 0,
-            MinHeight = 0,
-            Background = Palette.TransparentBrush,
-            BorderThickness = new Thickness(0),
-            VerticalAlignment = VerticalAlignment.Center,
-            Opacity = alwaysVisible ? 1 : 0,
-            OpacityTransition = new ScalarTransition { Duration = TimeSpan.FromMilliseconds(150) },
-        };
-        button.Resources["ButtonBackgroundPointerOver"] = Palette.SurfaceHoverBrush;
-        button.Resources["ButtonBackgroundPressed"] = Palette.SurfaceHoverBrush;
-        ToolTipService.SetToolTip(button, Ui.TipContent($"Rename {name}, or set its colour or logo"));
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, $"Rename {name}");
-        // Built on click, not with the row: a colour picker per table row is
-        // a lot of controls nobody opened, and a fresh one reads the current
-        // name and colour.
-        button.Click += (_, _) => Editor(ctx, key, name, baseName).ShowAt(button);
-        // Reachable by keyboard even while invisible.
-        button.GotFocus += (_, _) => button.Opacity = 1;
-        return button;
-    }
-
-    private static Flyout Editor(PageContext ctx, string key, string name, string baseName)
-    {
-        var stack = new StackPanel { Width = 300, Spacing = 10 };
-        stack.Children.Add(Ui.Text("Display name", 14, 600));
-        var box = new TextBox { Text = name, MaxLength = Renames.MaxLength, FontFamily = Fonts.Sans, FontSize = 15 };
+        if (ctx.Window.Content?.XamlRoot is not { } root) return;
+        var stack = new StackPanel { Width = 320, Spacing = 8 };
+        stack.Children.Add(Ui.Text("Name", 13.5, 600, Palette.TextMutedBrush));
+        var box = new TextBox { Text = name, MaxLength = Renames.MaxLength, FontFamily = Fonts.Sans, FontSize = 15, PlaceholderText = baseName, SelectionHighlightColor = Palette.AccentBrush };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(box, "Display name");
         stack.Children.Add(box);
-        var error = Ui.Text("", 13, 500, Palette.WarnBrush, wrap: true);
-        error.Visibility = Visibility.Collapsed;
-        stack.Children.Add(error);
         if (name != baseName) stack.Children.Add(Ui.Text($"Originally \"{baseName}\". Clear the box to restore it.", 13, 400, Palette.TextFaintBrush, wrap: true));
 
         // ---- Colour: the stored hex (override included), on Windows' own
         // picker, whose hex box is where a brand's exact code is typed.
         var original = AppColors.Of(ctx.State.Colors, name).ToLowerInvariant();
         var custom = ctx.State.ColorOverrides.ContainsKey(key);
-        var colors = new StackPanel { Spacing = 6, Margin = new Thickness(0, 6, 0, 0), BorderBrush = Palette.BorderBrush, BorderThickness = new Thickness(0, 1, 0, 0), Padding = new Thickness(0, 12, 0, 0) };
-        colors.Children.Add(Ui.Text("Colour", 14, 600));
+        var label = Ui.Text("Chart colour", 13.5, 600, Palette.TextMutedBrush);
+        label.Margin = new Thickness(0, 10, 0, 0);
+        stack.Children.Add(label);
         var picker = new ColorPicker
         {
             Color = Palette.HexOrOther(original),
@@ -83,97 +61,72 @@ public static class AppActions
             IsHexInputVisible = true,
             IsMoreButtonVisible = false,
             IsColorSliderVisible = true,
-            // The swatch beside the name already previews it, and the flyout is
-            // 300 wide: the default picker is half as wide again and pushes Save
-            // below a short window.
+            // The swatch beside the name already previews it.
             IsColorPreviewVisible = false,
             ColorSpectrumShape = ColorSpectrumShape.Box,
-            Width = 300,
+            Width = 320,
             MinWidth = 0,
             HorizontalAlignment = HorizontalAlignment.Left,
         };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(picker, $"Colour for {name}");
-        colors.Children.Add(picker);
-        var reset = Ui.Button("Default colour", fontSize: 14, padding: new Thickness(14, 7, 14, 7));
-        reset.Visibility = custom ? Visibility.Visible : Visibility.Collapsed;
-        Ui.SetTip(reset, "Back to the brand or palette colour");
-        colors.Children.Add(reset);
-        stack.Children.Add(colors);
+        stack.Children.Add(picker);
+        var error = Ui.Text("", 13, 500, Palette.WarnBrush, wrap: true);
+        error.Visibility = Visibility.Collapsed;
+        stack.Children.Add(error);
 
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
-        var save = Ui.Button("Save", primary: true, fontSize: 14, padding: new Thickness(16, 7, 16, 7));
-        buttons.Children.Add(save);
-        stack.Children.Add(buttons);
-
-        var logos = new StackPanel { Spacing = 6, Margin = new Thickness(0, 6, 0, 0), BorderBrush = Palette.BorderBrush, BorderThickness = new Thickness(0, 1, 0, 0), Padding = new Thickness(0, 12, 0, 0) };
-        logos.Children.Add(Ui.Text("Logo", 14, 600));
-        var logoRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        var set = Ui.Button("Set logo…", fontSize: 14, padding: new Thickness(14, 7, 14, 7));
-        var remove = Ui.Button("Remove logo", fontSize: 14, padding: new Thickness(14, 7, 14, 7));
-        logoRow.Children.Add(set);
-        logoRow.Children.Add(remove);
-        logos.Children.Add(logoRow);
-        logos.Children.Add(Ui.Text("Or drop an image onto the app's name. SVG, PNG, JPG, WebP, GIF, BMP or ICO.", 12.5, 400, Palette.TextFaintBrush, wrap: true));
-        stack.Children.Add(logos);
-
-        var flyout = new Flyout { Content = stack, Placement = FlyoutPlacementMode.BottomEdgeAlignedLeft };
-        flyout.Opening += (_, _) =>
+        var dialog = new ContentDialog
         {
-            remove.IsEnabled = ctx.State.Logos.HasOwnLogo(name);
-            error.Visibility = Visibility.Collapsed;
+            Title = "Rename or recolour",
+            Content = stack,
+            PrimaryButtonText = "Save",
+            CloseButtonText = "Cancel",
+            // Only offered when there is an override to drop.
+            SecondaryButtonText = custom ? "Default colour" : "",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = root,
+            RequestedTheme = Palette.IsLight ? ElementTheme.Light : ElementTheme.Dark,
         };
-        flyout.Opened += (_, _) => { box.Focus(FocusState.Programmatic); box.SelectAll(); };
+        Ui.Accented(dialog);
+        var saved = false;
+        dialog.Opened += (_, _) => { box.Focus(FocusState.Programmatic); box.SelectAll(); };
 
-        void Fail(string message)
-        {
-            error.Text = message;
-            error.Visibility = Visibility.Visible;
-        }
-
-        // Saves what changed: the name, then the colour.
-        async void Save()
+        // Saves what changed: the name, then the colour. Null when it all went
+        // in, else the reason to show.
+        async Task<string?> Save(bool defaultColour)
         {
             if (box.Text.Trim() != name)
             {
                 var text = box.Text;
                 var (err, _) = await Task.Run(() => Rename(ctx, key, text, baseName));
-                if (err != RenameError.None) { Fail(Renames.Message(err)); return; }
+                if (err != RenameError.None) return Renames.Message(err);
             }
-            var hex = ToHex(picker.Color);
-            if (hex != original)
+            var hex = defaultColour ? "" : ToHex(picker.Color);
+            if (defaultColour || hex != original)
             {
                 var (err, _) = await Task.Run(() => Recolor(ctx, key, hex));
-                if (err != ColorError.None) { Fail(ColorOverrides.Message(err)); return; }
+                if (err != ColorError.None) return ColorOverrides.Message(err);
             }
-            flyout.Hide();
-            await ctx.State.ReloadAsync();
+            saved = true;
+            return null;
         }
-        reset.Click += async (_, _) =>
+        async void OnButton(ContentDialogButtonClickEventArgs args, bool defaultColour)
         {
-            var (err, _) = await Task.Run(() => Recolor(ctx, key, ""));
-            if (err != ColorError.None) { Fail(ColorOverrides.Message(err)); return; }
-            flyout.Hide();
-            await ctx.State.ReloadAsync();
-        };
-        save.Click += (_, _) => Save();
-        box.KeyDown += (_, e) =>
-        {
-            if (e.Key != Windows.System.VirtualKey.Enter) return;
-            e.Handled = true;
-            Save();
-        };
-        set.Click += async (_, _) =>
-        {
-            flyout.Hide();
-            await PickLogo(ctx, name);
-        };
-        remove.Click += (_, _) =>
-        {
-            flyout.Hide();
-            try { ctx.State.Logos.RemoveLogo(name); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { _ = Shell.ShowMessage(ctx.Window, "Could not remove the logo", ex.Message); }
-        };
-        return flyout;
+            var deferral = args.GetDeferral();
+            try
+            {
+                if (await Save(defaultColour) is { } message)
+                {
+                    error.Text = message;
+                    error.Visibility = Visibility.Visible;
+                    args.Cancel = true;
+                }
+            }
+            finally { deferral.Complete(); }
+        }
+        dialog.PrimaryButtonClick += (_, args) => OnButton(args, false);
+        dialog.SecondaryButtonClick += (_, args) => OnButton(args, true);
+        await dialog.ShowAsync();
+        if (saved) await ctx.State.ReloadAsync();
     }
 
     private static (RenameError, string?) Rename(PageContext ctx, string key, string requested, string baseName)
@@ -235,15 +188,18 @@ public static class AppActions
     }
 
     /// <summary>
-    /// The "..." beside the pencil: hide the app from the By App page, or
-    /// merge it into another. See Naming/AppPrefs.cs for what each means -
-    /// hiding is that page's view only, merging is read everywhere.
+    /// The "..." beside an app's name: rename or recolour it, set or remove its
+    /// logo, and on By App (where <paramref name="candidates"/> is given) hide
+    /// it from that page or merge it into another. See Naming/AppPrefs.cs for
+    /// what hiding and merging mean - hiding is that page's view only, merging
+    /// is read everywhere.
     /// </summary>
-    public static Button Menu(PageContext ctx, string key, string name, bool hidden, IReadOnlyList<(string Key, string Name)> candidates, bool alwaysVisible = false)
+    public static Button Menu(PageContext ctx, string key, string name, string baseName, bool hidden = false,
+        IReadOnlyList<(string Key, string Name)>? candidates = null, bool alwaysVisible = false, double size = 14)
     {
         var button = new Button
         {
-            Content = new FontIcon { Glyph = "\uE712", FontSize = 14, Foreground = Palette.TextFaintBrush },
+            Content = new FontIcon { Glyph = "", FontSize = size, Foreground = Palette.TextFaintBrush },
             Padding = new Thickness(5),
             MinWidth = 0,
             MinHeight = 0,
@@ -255,31 +211,55 @@ public static class AppActions
         };
         button.Resources["ButtonBackgroundPointerOver"] = Palette.SurfaceHoverBrush;
         button.Resources["ButtonBackgroundPressed"] = Palette.SurfaceHoverBrush;
-        ToolTipService.SetToolTip(button, Ui.TipContent("Hide or merge"));
+        ToolTipService.SetToolTip(button, Ui.TipContent(name != baseName ? $"Rename, recolour or set a logo (originally {baseName})" : "Rename, recolour or set a logo"));
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, $"More for {name}");
+        // Reachable by keyboard even while invisible.
         button.GotFocus += (_, _) => button.Opacity = 1;
 
         var menu = new MenuFlyout { Placement = FlyoutPlacementMode.BottomEdgeAlignedRight };
-        var hide = new MenuFlyoutItem
+        var edit = new MenuFlyoutItem { Text = "Rename or recolour…", Icon = new FontIcon { Glyph = "" } };
+        edit.Click += async (_, _) => await EditAsync(ctx, key, name, baseName);
+        menu.Items.Add(edit);
+        menu.Items.Add(new MenuFlyoutSeparator());
+
+        var setLogo = new MenuFlyoutItem { Text = "Set logo…", Icon = new FontIcon { Glyph = "" } };
+        setLogo.Click += async (_, _) => await PickLogo(ctx, name);
+        menu.Items.Add(setLogo);
+        var removeLogo = new MenuFlyoutItem { Text = "Remove logo", Icon = new FontIcon { Glyph = "" } };
+        removeLogo.Click += (_, _) =>
         {
-            Text = hidden ? "Show on this page" : "Hide from this page",
-            Icon = new FontIcon { Glyph = hidden ? "\uE890" : "\uED1A" },
+            try { ctx.State.Logos.RemoveLogo(name); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { _ = Shell.ShowMessage(ctx.Window, "Could not remove the logo", ex.Message); }
         };
-        hide.Click += async (_, _) =>
+        menu.Items.Add(removeLogo);
+        // Only a file in the logos folder can be removed: a built-in alias or
+        // a colour swatch has nothing to delete.
+        menu.Opening += (_, _) => removeLogo.IsEnabled = ctx.State.Logos.HasOwnLogo(name);
+
+        if (candidates is not null)
         {
-            await Task.Run(() =>
+            menu.Items.Add(new MenuFlyoutSeparator());
+            var hide = new MenuFlyoutItem
             {
-                using var db = OpenForWrite(ctx);
-                AppPrefs.SetHidden(db, key, !hidden);
-            });
-            await ctx.State.ReloadAsync();
-        };
-        menu.Items.Add(hide);
-        var others = candidates.Where(c => c.Key != key).OrderBy(c => c.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
-        var merge = new MenuFlyoutItem { Text = "Merge into…", Icon = new FontIcon { Glyph = "\uE71B" }, IsEnabled = others.Count > 0 };
-        merge.Click += (_, _) => MergeFlyout(ctx, key, name, others).ShowAt(button);
-        menu.Items.Add(merge);
-        button.Flyout = menu;
+                Text = hidden ? "Show on this page" : "Hide from this page",
+                Icon = new FontIcon { Glyph = hidden ? "" : "" },
+            };
+            hide.Click += async (_, _) =>
+            {
+                await Task.Run(() =>
+                {
+                    using var db = OpenForWrite(ctx);
+                    AppPrefs.SetHidden(db, key, !hidden);
+                });
+                await ctx.State.ReloadAsync();
+            };
+            menu.Items.Add(hide);
+            var others = candidates.Where(c => c.Key != key).OrderBy(c => c.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+            var merge = new MenuFlyoutItem { Text = "Merge into…", Icon = new FontIcon { Glyph = "" }, IsEnabled = others.Count > 0 };
+            merge.Click += (_, _) => MergeFlyout(ctx, key, name, others).ShowAt(button);
+            menu.Items.Add(merge);
+        }
+        button.Flyout = Ui.Menu(menu);
         return button;
     }
 
@@ -356,10 +336,12 @@ public static class AppActions
     }
 
     /// <summary>
-    /// A name cell: the mark, the name (a link when the app earns a page), the
-    /// kind badge for non-path apps, and the pencil and the menu on hover.
+    /// A name cell: the mark, the name (a link when the app earns a page), a
+    /// "hidden" badge when listed again, and the menu on hover. No kind badge
+    /// (store, service): it said how Windows records the app, not anything
+    /// about its use.
     /// </summary>
-    public static StackPanel NameCell(PageContext ctx, string key, string name, string baseName, string kind, bool detailed, double size = 15.5,
+    public static StackPanel NameCell(PageContext ctx, string key, string name, string baseName, bool detailed, double size = 15.5,
         bool hidden = false, IReadOnlyList<(string Key, string Name)>? candidates = null)
     {
         var state = ctx.State;
@@ -377,21 +359,13 @@ public static class AppActions
             Ui.SetTip(text, $"{name} - too little activity for a detail page");
             cell.Children.Add(text);
         }
-        if (kind != "path") cell.Children.Add(Ui.Badge(kind == "appx" ? "store" : kind, size: 11.2, padding: new Thickness(7, 1.5, 7, 2)));
         if (hidden) cell.Children.Add(Ui.Badge("hidden", size: 11.2, padding: new Thickness(7, 1.5, 7, 2)));
-        var pencil = Pencil(ctx, key, name, baseName);
-        cell.Children.Add(pencil);
-        var menu = candidates is null ? null : Menu(ctx, key, name, hidden, candidates);
-        if (menu is not null) cell.Children.Add(menu);
-        cell.PointerEntered += (_, _) =>
-        {
-            pencil.Opacity = 1;
-            if (menu is not null) menu.Opacity = 1;
-        };
+        var menu = Menu(ctx, key, name, baseName, hidden, candidates);
+        cell.Children.Add(menu);
+        cell.PointerEntered += (_, _) => menu.Opacity = 1;
         cell.PointerExited += (_, _) =>
         {
-            if (pencil.FocusState == FocusState.Unfocused) pencil.Opacity = 0;
-            if (menu is not null && menu.FocusState == FocusState.Unfocused) menu.Opacity = 0;
+            if (menu.FocusState == FocusState.Unfocused) menu.Opacity = 0;
         };
         AcceptLogoDrop(ctx, cell, name);
         return cell;

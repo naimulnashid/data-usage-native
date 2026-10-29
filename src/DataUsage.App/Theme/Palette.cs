@@ -46,7 +46,7 @@ public static class Palette
         Color Bg, Color Surface, Color SurfaceHover, Color Inset, Color Border, Color BorderBright,
         Color Grid, Color Text, Color TextMuted, Color TextFaint, Color TooltipBg, Color Warn, Color Good,
         Color RowBorder, Color Accent, Color AccentBright, Color AccentFill, Color Down, Color Up, Color Wired,
-        Color HeatNone, Color HeatNoneRing, Color HoverWash, Color Plate, string[] Heat,
+        Color HeatNone, Color HeatNoneRing, Color HoverWash, Color Plate, Color Chrome, string[] Heat,
         double AccentDim, double AccentBorder, double AccentBorderStrong,
         double InkMin, double InkMax, double InkTextMin, double InkTextMax);
 
@@ -61,6 +61,7 @@ public static class Palette
         Down: Mix(Hex("#000000"), Hex("#2f80ed"), 0.78), Up: Mix(Hex("#ffffff"), Hex("#4d97ff"), 0.72),
         Wired: Mix(Hex("#ffffff"), Hex("#2f80ed"), 0.40),
         HeatNone: Hex("#0b0b0d"), HeatNoneRing: Hex("#1e1e22"), HoverWash: Hex("#ffffff", 0.04), Plate: Hex("#ececf1"),
+        Chrome: Hex("#000000"),
         Heat: ["#131519", "#12325c", "#17488a", "#1f62bd", "#2f80ed", "#6fb0ff"],
         AccentDim: 0.16, AccentBorder: 0.34, AccentBorderStrong: 0.46,
         // An app colour is painted within CIE L* 38..100 on black: a user's
@@ -77,7 +78,11 @@ public static class Palette
     /// (Ollama, Cursor, X) do not vanish into the card.
     /// </summary>
     private static readonly Tokens Light = new(
-        Bg: Hex("#f4f5f7"), Surface: Hex("#ffffff"), SurfaceHover: Hex("#eceff4"), Inset: Hex("#eef0f3"),
+        // Bg is a darker grey, by the owner's choice (2026-10-29), as AI
+        // Usage Native has it; it was #f4f5f7, which the
+        // title bar and top bar keep (Chrome): on the grey, Border is about
+        // 1.01:1 and the active tab's accent falls under 4.5:1.
+        Bg: Hex("#e6e6ea"), Surface: Hex("#ffffff"), SurfaceHover: Hex("#eceff4"), Inset: Hex("#eef0f3"),
         Border: Hex("#e3e5ea"), BorderBright: Hex("#cfd2d9"), Grid: Hex("#eceef2"),
         Text: Hex("#16171a"), TextMuted: Hex("#52525b"), TextFaint: Hex("#6b6b76"), TooltipBg: Hex("#ffffff"),
         Warn: Hex("#b42318"), Good: Hex("#15803d"), RowBorder: Hex("#e3e5ea"),
@@ -90,6 +95,7 @@ public static class Palette
         // the white card, so none of them showed. The hover fill is the deepest
         // step that keeps TextFaint at 4.6:1 on a hovered row.
         HeatNone: Hex("#f6f7f9"), HeatNoneRing: Hex("#cdd1d8"), HoverWash: Hex("#101828", 0.09), Plate: Hex("#000000", 0),
+        Chrome: Hex("#f4f5f7"),
         Heat: ["#e1e6ed", "#c7dcf8", "#94bdf2", "#5b99e8", "#2a74dc", "#1252b0"],
         AccentDim: 0.10, AccentBorder: 0.30, AccentBorderStrong: 0.42,
         InkMin: 0, InkMax: 74, InkTextMin: 0, InkTextMax: 50);
@@ -127,6 +133,8 @@ public static class Palette
     public static Color AccentGlow => WithAlpha(_t.Accent, 0.28);
 
     public static readonly SolidColorBrush BgBrush = new();
+    /// <summary>The title bar and the top bar. The page's own colour in the dark theme.</summary>
+    public static readonly SolidColorBrush ChromeBrush = new();
     public static readonly SolidColorBrush SurfaceBrush = new();
     public static readonly SolidColorBrush SurfaceHoverBrush = new();
     public static readonly SolidColorBrush InsetBrush = new();
@@ -145,6 +153,15 @@ public static class Palette
     public static readonly SolidColorBrush RowBorderBrush = new();
     public static readonly SolidColorBrush TransparentBrush = new(Colors.Transparent);
     public static readonly SolidColorBrush HoverWashBrush = new();
+
+    /// <summary>
+    /// A menu item's hover and press fills. WinUI's light hover is about 4%
+    /// black, which on the light menu's near-white was measured at #F1F1F3
+    /// over #F9F9FC in AI Usage Native - invisible in practice. Light uses the
+    /// page's hover wash instead; dark keeps WinUI's own values (6% / 4% white).
+    /// </summary>
+    public static readonly SolidColorBrush MenuHoverBrush = new();
+    public static readonly SolidColorBrush MenuPressedBrush = new();
 
     public static readonly SolidColorBrush AccentBrush = new();
     public static readonly SolidColorBrush AccentBrightBrush = new();
@@ -191,6 +208,7 @@ public static class Palette
     private static void Paint()
     {
         BgBrush.Color = _t.Bg;
+        ChromeBrush.Color = _t.Chrome;
         SurfaceBrush.Color = _t.Surface;
         SurfaceHoverBrush.Color = _t.SurfaceHover;
         InsetBrush.Color = _t.Inset;
@@ -208,6 +226,8 @@ public static class Palette
         GoodDimBrush.Color = WithAlpha(_t.Good, IsLight ? 0.10 : 0.14);
         RowBorderBrush.Color = _t.RowBorder;
         HoverWashBrush.Color = _t.HoverWash;
+        MenuHoverBrush.Color = IsLight ? _t.HoverWash : Hex("#ffffff", 0.06);
+        MenuPressedBrush.Color = IsLight ? WithAlpha(_t.Text, 0.06) : Hex("#ffffff", 0.04);
         AccentBrush.Color = _t.Accent;
         AccentBrightBrush.Color = _t.AccentBright;
         AccentDimBrush.Color = WithAlpha(_t.Accent, _t.AccentDim);

@@ -18,9 +18,10 @@ namespace DataUsage.App.Views;
 /// </summary>
 /// <remarks>
 /// Apps the user hid (Naming/AppPrefs.cs) leave the list and the Top 10 and
-/// nothing else; "Show N hidden" lists them again to bring one back. The table
-/// carried a Share column until 0.3.0: the Top 10 shows the large shares, and
-/// the small ones drew as nothing.
+/// nothing else; "Show N hidden" lists them again to bring one back. Neither
+/// view shows a share: the table's Share column went in 0.3.0 and the grid's
+/// size bar after it. The Top 10 shows the large shares, and the small ones
+/// drew as nothing. Nor is an app badged with its kind (store, service).
 /// </remarks>
 public sealed class AppsPage(PageContext ctx) : IPage
 {
@@ -91,7 +92,7 @@ public sealed class AppsPage(PageContext ctx) : IPage
         var candidates = data.Apps.Select(a => (a.Key, a.Name)).ToList();
 
         var body = new StackPanel();
-        body.Children.Add(ctx.State.AppsView == "grid" ? Grid(rows, listed, candidates) : Table(rows, candidates));
+        body.Children.Add(ctx.State.AppsView == "grid" ? Grid(rows, candidates) : Table(rows, candidates));
 
         var hidden = data.Apps.Count(a => a.Hidden);
         var small = listed.Count - listed.Count(a => a.Detailed);
@@ -148,7 +149,7 @@ public sealed class AppsPage(PageContext ctx) : IPage
 
         foreach (var a in rows)
         {
-            var name = AppActions.NameCell(ctx, a.Key, a.Name, a.BaseName, a.Kind, a.Detailed, hidden: a.Hidden, candidates: candidates);
+            var name = AppActions.NameCell(ctx, a.Key, a.Name, a.BaseName, a.Detailed, hidden: a.Hidden, candidates: candidates);
             if (a.Hidden) name.Opacity = 0.6;
             table.AddRow([
                 name,
@@ -165,10 +166,9 @@ public sealed class AppsPage(PageContext ctx) : IPage
     /// Each app a card: its logo large, then the figures. The whole card opens
     /// the detail page when the app has one; its own buttons are left alone.
     /// </summary>
-    private FitGrid Grid(List<AppRow> rows, List<AppRow> listed, IReadOnlyList<(string Key, string Name)> candidates)
+    private FitGrid Grid(List<AppRow> rows, IReadOnlyList<(string Key, string Name)> candidates)
     {
         var state = ctx.State;
-        var max = Math.Max(1, listed.Count == 0 ? 1 : listed.Max(a => a.Total));
         var cards = rows.Select((a, i) =>
         {
             var stack = new StackPanel();
@@ -178,25 +178,22 @@ public sealed class AppsPage(PageContext ctx) : IPage
             var mark = AppIconView.Create(a.Name, state.Colors, state.Icons, 52);
             mark.HorizontalAlignment = HorizontalAlignment.Left;
             top.Children.Add(mark);
-            var actions = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Top };
-            var pencil = AppActions.Pencil(ctx, a.Key, a.Name, a.BaseName);
-            var menu = AppActions.Menu(ctx, a.Key, a.Name, a.Hidden, candidates);
-            actions.Children.Add(pencil);
-            actions.Children.Add(menu);
-            Microsoft.UI.Xaml.Controls.Grid.SetColumn(actions, 1);
-            top.Children.Add(actions);
+            var menu = AppActions.Menu(ctx, a.Key, a.Name, a.BaseName, a.Hidden, candidates);
+            menu.VerticalAlignment = VerticalAlignment.Top;
+            Microsoft.UI.Xaml.Controls.Grid.SetColumn(menu, 1);
+            top.Children.Add(menu);
             stack.Children.Add(top);
 
             var title = Ui.Text(a.Name, 16.5, 600, selectable: false);
             title.TextTrimming = TextTrimming.CharacterEllipsis;
             Ui.SetTip(title, a.Detailed ? $"{a.Name} - open detail" : $"{a.Name} - too little activity for a detail page");
             stack.Children.Add(title);
-            if (a.Kind != "path" || a.Hidden)
+            if (a.Hidden)
             {
-                var badges = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, Margin = new Thickness(0, 6, 0, 0) };
-                if (a.Kind != "path") badges.Children.Add(Ui.Badge(a.Kind == "appx" ? "store" : a.Kind, size: 11.2, padding: new Thickness(7, 1.5, 7, 2)));
-                if (a.Hidden) badges.Children.Add(Ui.Badge("hidden", size: 11.2, padding: new Thickness(7, 1.5, 7, 2)));
-                stack.Children.Add(badges);
+                var badge = Ui.Badge("hidden", size: 11.2, padding: new Thickness(7, 1.5, 7, 2));
+                badge.HorizontalAlignment = HorizontalAlignment.Left;
+                badge.Margin = new Thickness(0, 6, 0, 0);
+                stack.Children.Add(badge);
             }
             var total = Ui.Text(Format.Bytes(a.Total), 25, 650, Palette.TextBrush, -0.02, numeric: true);
             total.Margin = new Thickness(0, 11, 0, 0);
@@ -205,9 +202,6 @@ public sealed class AppsPage(PageContext ctx) : IPage
             io.Margin = new Thickness(0, 2, 0, 0);
             stack.Children.Add(io);
             stack.Children.Add(Ui.Text($"{a.Days} active {(a.Days == 1 ? "day" : "days")}", 13, 400, Palette.TextFaintBrush));
-            var bar = Ui.ShareBar((double)a.Total / max, new SolidColorBrush(Palette.App(state.Colors, a.Name)), delayMs: Math.Min(i * 22, 360));
-            bar.Margin = new Thickness(0, 13, 0, 0);
-            stack.Children.Add(bar);
 
             var card = new Border
             {
@@ -224,13 +218,12 @@ public sealed class AppsPage(PageContext ctx) : IPage
             {
                 card.Background = Palette.SurfaceBrush;
                 if (a.Detailed) card.BorderBrush = Palette.AccentBorderBrush;
-                pencil.Opacity = menu.Opacity = 1;
+                menu.Opacity = 1;
                 if (a.Hidden) card.Opacity = 1;
             };
             card.PointerExited += (_, _) =>
             {
                 card.Background = Palette.InsetBrush;
-                if (pencil.FocusState == FocusState.Unfocused) pencil.Opacity = 0;
                 if (menu.FocusState == FocusState.Unfocused) menu.Opacity = 0;
                 if (a.Hidden) card.Opacity = 0.6;
             };

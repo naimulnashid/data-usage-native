@@ -77,12 +77,12 @@ public sealed class AppDetailPage(PageContext ctx, string key) : IPage
         var state = ctx.State;
         var color = Palette.App(state.Colors, app.Name);
         var mark = AppIconView.Create(app.Name, state.Colors, state.Icons, 30);
-        var pencil = AppActions.Pencil(ctx, app.Key, app.Name, app.BaseName, 17, alwaysVisible: true);
-        pencil.VerticalAlignment = VerticalAlignment.Center;
+        // Rename, recolour and the logo; hiding and merging belong to By App.
+        var menu = AppActions.Menu(ctx, app.Key, app.Name, app.BaseName, alwaysVisible: true, size: 17);
         var head = Parts.PageHead(app.Name,
             $"{(app.First is { } f && app.Last is { } l ? $"{Format.DayShort(f)} – {Format.DayShort(l)} · " : "")}{app.Days} active days · {Format.Count(app.Rows)} records",
             before: back, titleExtra: mark);
-        ((StackPanel)head.Children[1]).Children.Add(pencil);
+        ((StackPanel)head.Children[1]).Children.Add(menu);
         AppActions.AcceptLogoDrop(ctx, head, app.Name);
         page.Children.Add(head);
 
