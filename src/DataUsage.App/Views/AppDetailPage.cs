@@ -26,11 +26,18 @@ public sealed class AppDetailPage(PageContext ctx, string key) : IPage
     private bool _exists;
     private bool _eligible;
 
+    public Route Back { get; } = new(PageKind.Apps);
+
+    // Daily usage's own range; every other figure covers all history.
+    private int _range = Scope.DefaultChartDays;
+
     public void Load()
     {
         var q = ctx.State.Queries!;
-        _app = q.AppDetailFor(key, ctx.State.Scope);
-        _exists = _app is not null || q.AppExists(key);
+        // An app the user merged into another is shown as that one.
+        var shown = q.MergedInto(key) ?? key;
+        _app = q.AppDetailFor(shown, Scope.All);
+        _exists = _app is not null || q.AppExists(shown);
         // The same gate, and the same range, as the table's link.
         _eligible = _app is not null && UsageQueries.EarnsDetailPage(_app.Totals.Total, _app.Days);
     }
@@ -44,7 +51,7 @@ public sealed class AppDetailPage(PageContext ctx, string key) : IPage
     public UIElement Build()
     {
         var page = new StackPanel();
-        var back = Ui.Link("← All apps", () => ctx.Navigate(new Route(PageKind.Apps)));
+        var back = Ui.Link("← All apps", () => ctx.Navigate(Back));
         back.Margin = new Thickness(0, 0, 0, 10);
 
         if (!_exists)
@@ -56,9 +63,7 @@ public sealed class AppDetailPage(PageContext ctx, string key) : IPage
         if (_app is null)
         {
             page.Children.Add(back);
-            var all = Ui.Chip("Show everything", false);
-            all.Click += (_, _) => ctx.State.SetScope(Scope.All);
-            page.Children.Add(Parts.Empty("Nothing in this range", "This app moved no data in the selected range. Try a longer one.", all));
+            page.Children.Add(Parts.Empty("No such app", "Nothing in the history resolves to this app."));
             return page;
         }
         if (!_eligible)
@@ -91,9 +96,20 @@ public sealed class AppDetailPage(PageContext ctx, string key) : IPage
         cards.Margin = new Thickness(0, 0, 0, 18.4);
         page.Children.Add(cards);
 
-        var heaviest = app.Peak is { } p ? Parts.Callout("Heaviest day", Format.DayShort(p.Date), Format.Bytes(p.Total)) : null;
-        page.Children.Add(Ui.Panel("Daily usage", "Download and upload stacked, on the same shading as the rest of the app", heaviest, DownUpBarChart.Daily(app.Daily)));
-        page.Children.Add(OverviewPage.HourPanel(app.Hourly, "Local time, summed over the selected range"));
+        // The series is all history, one entry per day, so a range is its tail;
+        // the heaviest day is the range's own and sits in the subtitle, which
+        // leaves the head's right slot to the menu.
+        var shownDays = app.Daily.TakeLast(Math.Min(_range, app.Daily.Count)).ToList();
+        var peak = shownDays.Where(d => d.Total > 0).OrderByDescending(d => d.Total).FirstOrDefault();
+        var range = Parts.RangeBox(_range, d =>
+        {
+            _range = d;
+            ctx.Redraw();
+        }, "Daily usage range");
+        page.Children.Add(Ui.Panel("Daily usage",
+            peak is null ? "Nothing moved in this range" : $"Heaviest day {Format.DayShort(peak.Date)} · {Format.Bytes(peak.Total!.Value)}",
+            range, DownUpBarChart.Daily(shownDays)));
+        page.Children.Add(OverviewPage.HourPanel(app.Hourly, "Local time, summed over all history"));
 
         if (app.Networks.Count > 0)
         {
@@ -112,25 +128,41 @@ public sealed class AppDetailPage(PageContext ctx, string key) : IPage
         if (app.Members.Count > 1)
         {
             var max = app.Members.Max(m => m.Bytes);
-            var table = new DataTable([new("Program"), new("Active days"), new("Total"), new($"Share of {app.Name}", Width: 280, Left: true)]) { RowPadding = 11 };
+            var userMerged = app.Members.Any(m => m.MergedFrom is not null);
+            List<Column> columns = [new("Program"), new("Active days"), new("Total"), new($"Share of {app.Name}", Width: 280, Left: true)];
+            if (userMerged) columns.Add(new("", Width: 54));
+            var table = new DataTable(columns) { RowPadding = 11 };
             foreach (var m in app.Members)
             {
                 var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 9 };
-                name.Children.Add(AppIconView.Create(m.Name, state.Colors, state.Icons, 16));
+                name.Children.Add(AppIconView.Create(m.Name, state.Colors, state.Icons, 16, colorName: app.Name));
                 name.Children.Add(Ui.Text(m.Name, 15.5));
+                if (m.MergedFrom is { } from)
+                {
+                    var badge = Ui.Badge("merged", size: 11.2, padding: new Thickness(7, 1.5, 7, 2));
+                    Ui.SetTip(badge, $"Merged by you, from {from.Name}");
+                    name.Children.Add(badge);
+                }
                 var bar = Ui.ShareBar((double)m.Bytes / Math.Max(1, max), new SolidColorBrush(color));
                 bar.Tag = "stretch";
                 bar.HorizontalAlignment = HorizontalAlignment.Stretch;
-                table.AddRow([name, DataTable.Cell(Format.Count(m.Days), Palette.TextMutedBrush), DataTable.Cell(Format.Bytes(m.Bytes), weight: 600), bar]);
+                List<UIElement?> cells = [name, DataTable.Cell(Format.Count(m.Days), Palette.TextMutedBrush), DataTable.Cell(Format.Bytes(m.Bytes), weight: 600), bar];
+                if (userMerged) cells.Add(m.MergedFrom is { } source ? AppActions.Separate(ctx, source.Key, source.Name) : null);
+                table.AddRow(cells);
             }
             page.Children.Add(Ui.Panel("Merged apps",
-                $"{app.Members.Count} separate programs are counted together as {app.Name}. Their totals are added; nothing is double-counted.", null, table.Build()));
+                $"{app.Members.Count} separate programs are counted together as {app.Name}. Their totals are added; nothing is double-counted.{(userMerged ? " Those you merged can be separated again." : "")}", null, table.Build()));
         }
 
-        var ids = new DataTable([new("SRUM identity"), new("Total")]) { RowPadding = 10 };
-        foreach (var id in app.Identities) ids.AddRow([Parts.MonoCell(id.Identity, Palette.TextMutedBrush, 13), DataTable.Cell(Format.Bytes(id.Bytes))]);
-        page.Children.Add(Ui.Panel("Grouped from",
-            $"{app.Identities.Count} raw SRUM {(app.Identities.Count == 1 ? "identity is" : "identities are")} grouped under this app - usually different installed versions.", null, ids.Build()));
+        // Only when there is more than one: that is the evidence for why
+        // several raw strings are shown as one app. The web's rule.
+        if (app.Identities.Count > 1)
+        {
+            var ids = new DataTable([new("SRUM identity"), new("Total")]) { RowPadding = 10 };
+            foreach (var id in app.Identities) ids.AddRow([Parts.MonoCell(id.Identity, Palette.TextMutedBrush, 13), DataTable.Cell(Format.Bytes(id.Bytes))]);
+            page.Children.Add(Ui.Panel("Grouped from",
+                $"{app.Identities.Count} raw SRUM identities are grouped under this app - usually different installed versions.", null, ids.Build()));
+        }
         return page;
     }
 }

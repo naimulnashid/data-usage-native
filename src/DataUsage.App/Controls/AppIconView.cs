@@ -16,9 +16,10 @@ namespace DataUsage.App.Controls;
 /// </summary>
 public static class AppIconView
 {
-    public static FrameworkElement Create(string name, IReadOnlyDictionary<string, string> colors, IReadOnlyDictionary<string, AppIcon> icons, double size = 18)
+    /// <param name="colorName">Whose colour the swatch takes, when not the name's own: a member takes its family's, as on the web.</param>
+    public static FrameworkElement Create(string name, IReadOnlyDictionary<string, string> colors, IReadOnlyDictionary<string, AppIcon> icons, double size = 18, string? colorName = null)
     {
-        var color = Palette.App(colors, name);
+        var color = Palette.App(colors, colorName ?? name);
         // Slightly smaller and rounder than a logo box, so it reads as a marker
         // rather than a missing image.
         var swatch = new Border

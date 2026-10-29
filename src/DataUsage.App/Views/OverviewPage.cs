@@ -22,13 +22,15 @@ public sealed class OverviewPage(PageContext ctx) : IPage
     private NetworkBreakdown? _networks;
     private List<(string Date, long Total)> _heat = [];
     private long _rows;
+    // Daily by app's own range; every other figure covers all history.
+    private int _range = Scope.DefaultChartDays;
 
     public void Load()
     {
         var q = ctx.State.Queries!;
-        var scope = ctx.State.Scope;
+        var scope = Scope.All;
         _data = q.Overview(scope);
-        _timeline = q.Timeline(scope);
+        _timeline = q.Timeline();
         _networks = q.Networks(scope);
         _heat = q.HeatmapDays();
         _rows = _data.LatestDate is null ? q.RowCount() : 1;
@@ -49,14 +51,8 @@ public sealed class OverviewPage(PageContext ctx) : IPage
         var state = ctx.State;
         var page = new StackPanel();
 
-        if (data.LatestDate is null)
-        {
-            if (_rows == 0) return Shell.NoData(ctx);
-            var all = Ui.Chip("Show everything", false);
-            all.Click += (_, _) => state.SetScope(Scope.All);
-            page.Children.Add(Parts.Empty("Nothing in this range", "There is usage history stored, but none in the selected range. Try a longer one.", all));
-            return page;
-        }
+        // All history: no newest day means nothing was ever collected.
+        if (data.LatestDate is null) return Shell.NoData(ctx);
 
         // ---- Head ----
         var sub = $"Latest data {Format.DayLong(data.LatestDate)}";
@@ -89,14 +85,22 @@ public sealed class OverviewPage(PageContext ctx) : IPage
             null, ActivityBody()));
 
         // ---- Daily by app ----
+        // Every range arrives ready-made (each ranks its own top apps), so the
+        // menu only picks one.
         var timeline = _timeline!;
+        var stack = timeline.Ranges.GetValueOrDefault(_range) ?? timeline.Ranges.Values.First();
         var body = new StackPanel();
-        body.Children.Add(new StackedAreaChart(timeline.Points, timeline.Series, state.Colors));
-        body.Children.Add(AppIconView.Legend(timeline.Series, state.Colors, state.Icons));
-        page.Children.Add(Ui.Panel("Daily by app", $"Top {timeline.Series.Count(s => s != "Other")} apps stacked; everything else grouped as Other", null, body));
+        body.Children.Add(new StackedAreaChart(stack.Points, stack.Series, state.Colors));
+        body.Children.Add(AppIconView.Legend(stack.Series, state.Colors, state.Icons));
+        var range = Parts.RangeBox(_range, d =>
+        {
+            _range = d;
+            ctx.Redraw();
+        }, "Daily by app range");
+        page.Children.Add(Ui.Panel("Daily by app", $"Top {stack.Series.Count(s => s != "Other")} apps stacked; everything else grouped as Other", range, body));
 
         // ---- Hour of day ----
-        page.Children.Add(HourPanel(timeline.Hourly, "Local time, summed over the selected range"));
+        page.Children.Add(HourPanel(timeline.Hourly, "Local time, summed over all history"));
 
         // ---- The split app ----
         var splitTotal = data.SplitFocus + data.SplitOther;
@@ -109,7 +113,7 @@ public sealed class OverviewPage(PageContext ctx) : IPage
         }
 
         // ---- Where it went ----
-        page.Children.Add(Ui.Panel("Where it went", "Wi-Fi against wired, and which network, over the selected range", null, NetworkBody(_networks!)));
+        page.Children.Add(Ui.Panel("Where it went", null, null, NetworkBody(_networks!)));
         return page;
     }
 
@@ -206,10 +210,29 @@ public sealed class OverviewPage(PageContext ctx) : IPage
         _ => (Palette.WiredBrush, Palette.WiredBrush),
     };
 
+    // Slice shades: Wi-Fi networks step down the accent and wired ones the
+    // wired colour, largest first, mixed toward the card so each step works on
+    // both themes; an unnamed profile is the faint grey its row is dimmed to.
+    private static readonly double[] WifiSteps = [1, 0.74, 0.56, 0.42, 0.32, 0.24];
+    private static readonly double[] WiredSteps = [1, 0.7, 0.48];
+
+    private static List<Brush> SliceBrushes(IReadOnlyList<NetworkRow> networks)
+    {
+        int wifi = 0, wired = 0;
+        return networks.Select(n =>
+        {
+            if (!n.Named && n.Id != "0") return (Brush)Palette.TextFaintBrush;
+            if (n.Kind == LinkKind.Wifi) return new SolidColorBrush(Palette.Mix(Palette.Surface, Palette.Accent, WifiSteps[Math.Min(wifi++, WifiSteps.Length - 1)]));
+            if (n.Kind == LinkKind.Wired) return new SolidColorBrush(Palette.Mix(Palette.Surface, Palette.Wired, WiredSteps[Math.Min(wired++, WiredSteps.Length - 1)]));
+            return Palette.TextFaintBrush;
+        }).ToList();
+    }
+
     /// <summary>
-    /// "Where it went": by kind of link, then by network - all from the
-    /// aggregate rows, so the parts add up to the score cards. Wi-Fi and wired
-    /// always; mobile and other only when present.
+    /// "Where it went": by kind of link, each with its icon, then the networks
+    /// as a ring beside their list - all from the aggregate rows, so the parts
+    /// add up to the score cards. Wi-Fi and wired always; mobile and other only
+    /// when present.
     /// </summary>
     private static StackPanel NetworkBody(NetworkBreakdown networks)
     {
@@ -217,14 +240,11 @@ public sealed class OverviewPage(PageContext ctx) : IPage
         double Pct(long b) => networks.Total > 0 ? (double)b / networks.Total * 100 : 0;
 
         var body = new StackPanel();
-        body.Children.Add(TwoPartBar(kinds.Select(k => (Pct(k.Total) / 100, LinkBrushes(k.Kind).Fill)).ToList()));
-
         var grid = Parts.Grid(Math.Min(4, kinds.Count) switch { 4 => 215, 3 => 260, _ => 340 }, kinds.Select(k =>
         {
             var cell = new StackPanel();
-            var head = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
-            var sw = new Border { Width = 11, Height = 11, CornerRadius = new CornerRadius(3), Background = LinkBrushes(k.Kind).Fill, VerticalAlignment = VerticalAlignment.Center };
-            head.Children.Add(sw);
+            var head = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            head.Children.Add(new FontIcon { Glyph = Parts.LinkGlyph(k.Kind), FontSize = 16, Foreground = LinkBrushes(k.Kind).Value, VerticalAlignment = VerticalAlignment.Center });
             head.Children.Add(Ui.Text(LinkLabel[k.Kind], 15, 400, Palette.TextMutedBrush));
             cell.Children.Add(head);
             var value = Ui.Text(Format.Bytes(k.Total), 44, 650, LinkBrushes(k.Kind).Value, -0.035, numeric: true);
@@ -233,30 +253,35 @@ public sealed class OverviewPage(PageContext ctx) : IPage
             cell.Children.Add(Ui.Text($"{Format.Percent(Pct(k.Total))} of all traffic", 15, 400, Palette.TextMutedBrush));
             return (UIElement)cell;
         }).ToArray());
-        grid.Margin = new Thickness(0, 22, 0, 0);
         body.Children.Add(grid);
 
         if (networks.Networks.Count == 0) return body;
 
-        var block = new StackPanel { Margin = new Thickness(0, 25.6, 0, 0), Padding = new Thickness(0, 17.6, 0, 0), BorderBrush = Palette.BorderBrush, BorderThickness = new Thickness(0, 1, 0, 0) };
-        var ssidHead = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(0, 0, 0, 8) };
-        ssidHead.Children.Add(Ui.Text("Networks", 15, 600));
-        var count = Ui.Text($"{networks.Networks.Count} {(networks.Networks.Count == 1 ? "network" : "networks")}", 13, 400, Palette.TextFaintBrush);
-        count.VerticalAlignment = VerticalAlignment.Bottom;
-        ssidHead.Children.Add(count);
-        block.Children.Add(ssidHead);
+        var block = new StackPanel { Margin = new Thickness(0, 25.6, 0, 0), Padding = new Thickness(0, 22, 0, 0), BorderBrush = Palette.BorderBrush, BorderThickness = new Thickness(0, 1, 0, 0) };
+        var brushes = SliceBrushes(networks.Networks);
+        string NameOf(NetworkRow n) => n.Named || n.Id == "0" ? n.Label : $"{n.Label}, unnamed";
 
-        var table = new Grid { ColumnSpacing = 19, RowSpacing = 0 };
-        table.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.40, GridUnitType.Star) });
-        table.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.15, GridUnitType.Star) });
-        table.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.45, GridUnitType.Star) });
+        var split = new Grid { ColumnSpacing = 35 };
+        split.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        split.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var count = networks.Networks.Count;
+        var donut = new DonutChart(
+            networks.Networks.Select((n, i) => new DonutSlice(NameOf(n), n.Total, brushes[i], Parts.LinkGlyph(n.Kind))).ToList(),
+            networks.Total, $"{count} {(count == 1 ? "network" : "networks")}")
+        { VerticalAlignment = VerticalAlignment.Center };
+        split.Children.Add(donut);
+
+        var table = new Grid { ColumnSpacing = 19, VerticalAlignment = VerticalAlignment.Center };
+        table.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        table.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        table.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });
         var r = 0;
         foreach (var n in networks.Networks)
         {
             table.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            var nameText = n.Named || n.Id == "0" ? n.Label : $"{n.Label}, unnamed";
-            var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, Margin = new Thickness(0, 6.4, 0, 6.4) };
-            var label = Ui.Text(nameText, 15.5, 400, n.Named ? Palette.TextBrush : Palette.TextFaintBrush);
+            var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 9, Margin = new Thickness(0, 7, 0, 7) };
+            name.Children.Add(new FontIcon { Glyph = Parts.LinkGlyph(n.Kind), FontSize = 15, Foreground = brushes[r], VerticalAlignment = VerticalAlignment.Center });
+            var label = Ui.Text(NameOf(n), 15.5, 400, n.Named ? Palette.TextBrush : Palette.TextFaintBrush);
             if (!n.Named) label.FontStyle = Windows.UI.Text.FontStyle.Italic;
             name.Children.Add(label);
             if (n.Aliases.Count > 0)
@@ -274,20 +299,24 @@ public sealed class OverviewPage(PageContext ctx) : IPage
             Grid.SetRow(total, r);
             Grid.SetColumn(total, 1);
             table.Children.Add(total);
-            var bar = Ui.ShareBar(Pct(n.Total) / 100, n.Named ? Palette.AccentBrush : Palette.TextFaintBrush, delayMs: r * 40);
-            Grid.SetRow(bar, r);
-            Grid.SetColumn(bar, 2);
-            table.Children.Add(bar);
+            var pct = Ui.Text(Format.Percent(Pct(n.Total)), 15.5, 400, Palette.TextMutedBrush, numeric: true);
+            pct.HorizontalAlignment = HorizontalAlignment.Right;
+            pct.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetRow(pct, r);
+            Grid.SetColumn(pct, 2);
+            table.Children.Add(pct);
             r++;
         }
-        block.Children.Add(table);
+        Grid.SetColumn(table, 1);
+        split.Children.Add(table);
+        block.Children.Add(split);
 
         // Windows' own page is scoped to one network profile, so an
         // all-networks total legitimately reads higher. Said here, beside the
         // row that WILL match, or the gap reads as a bug.
         var note = Ui.Text("Windows' own Data usage page shows one network at a time, so its figure matches one row here rather than the total. Names are learned by watching which network the laptop is on; an unnamed one fills in the next time it is seen.", 13, 400, Palette.TextFaintBrush, wrap: true);
         note.LineHeight = 21;
-        note.Margin = new Thickness(0, 14, 0, 0);
+        note.Margin = new Thickness(0, 18, 0, 0);
         block.Children.Add(note);
         body.Children.Add(block);
         return body;

@@ -16,6 +16,8 @@ public sealed class ActivityPage(PageContext ctx) : IPage
 {
     private List<(string Date, long Total)> _days = [];
 
+    public Route Back { get; } = new(PageKind.Overview);
+
     public void Load() => _days = ctx.State.Queries!.HeatmapDays(weeks: null);
 
     public void Placeholder() => _days = Views.Placeholder.Heat();
@@ -23,9 +25,9 @@ public sealed class ActivityPage(PageContext ctx) : IPage
     public UIElement Build()
     {
         var page = new StackPanel();
-        var back = Ui.Link("← Overview", () => ctx.Navigate(new Route(PageKind.Overview)));
+        var back = Ui.Link("← Overview", () => ctx.Navigate(Back));
         back.Margin = new Thickness(0, 0, 0, 10);
-        page.Children.Add(Parts.PageHead("Activity", "Every day this app holds, in blocks of 26 weeks. Outlined days were never collected.", before: back));
+        page.Children.Add(Parts.PageHead("Activity", "Every day held, six months to a row, on one colour scale", before: back));
 
         var earliest = _days.Count > 0 ? _days.Min(d => d.Date) : null;
         var blocks = Heatmap.Expanded(_days, earliest);
@@ -46,7 +48,8 @@ public sealed class ActivityPage(PageContext ctx) : IPage
         }
         var span = blocks.Count > 0 ? $"since {Format.DayShort(blocks[0].First)}, {blocks[0].First[..4]}" : "";
         body.Children.Add(HeatmapView.Legend(blocks.Sum(b => b.Total), blocks.Sum(b => b.ActiveDays), span, null));
-        page.Children.Add(Ui.Panel("Full history", "Daily totals across everything collected.", null, body));
+        page.Children.Add(Ui.Panel(ctx.State.Device.Label,
+            "Daily totals. Outlined days were never collected - before collection started, or lost before a run read them - which is not the same as a quiet day.", null, body));
         return page;
     }
 }

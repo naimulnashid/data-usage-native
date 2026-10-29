@@ -31,7 +31,6 @@ public sealed class AppState : IDisposable
     {
         _ui = ui;
         _settings = settings;
-        Scope = new Scope(Math.Clamp(settings.ScopeDays, 1, Scope.AllDays));
         Logos = new LogoStore(ui);
         Logos.Changed += () => _ = ReloadAsync();
         Open();
@@ -43,7 +42,20 @@ public sealed class AppState : IDisposable
 
     public UsageQueries? Queries { get; private set; }
 
-    public Scope Scope { get; private set; }
+    /// <summary>
+    /// By App's list as a table or a grid, remembered with the app's other
+    /// preferences. Pages have no range any more: every figure covers all
+    /// history, and the daily charts carry their own.
+    /// </summary>
+    public string AppsView
+    {
+        get => _settings.AppsView == "grid" ? "grid" : "table";
+        set
+        {
+            _settings.AppsView = value;
+            _settings.Save();
+        }
+    }
 
     public LogoStore Logos { get; }
 
@@ -101,16 +113,6 @@ public sealed class AppState : IDisposable
         {
             // Unwatchable: the Refresh command still works.
         }
-    }
-
-    public void SetScope(Scope scope)
-    {
-        if (scope == Scope) return;
-        Scope = scope;
-        _settings.ScopeDays = scope.Days;
-        _settings.Save();
-        Version++;
-        Changed?.Invoke();
     }
 
     public void SaveDevice(DeviceSettings device)
@@ -204,14 +206,23 @@ public sealed class AppState : IDisposable
             """;
         var signature = cmd.ExecuteScalar() as string ?? "";
         // Apart, because a database no new-version write path has touched yet
-        // has no app_colors table, and the query above must not fail for it.
-        try
+        // has no app_colors, app_hidden or app_merges table, and the query
+        // above must not fail for it.
+        foreach (var sql in new[]
+                 {
+                     "SELECT COUNT(*) || ':' || COALESCE(MAX(updated_at), '') FROM app_colors",
+                     "SELECT COUNT(*) || ':' || COALESCE(MAX(hidden_at), '') FROM app_hidden",
+                     "SELECT COUNT(*) || ':' || COALESCE(MAX(updated_at), '') FROM app_merges",
+                 })
         {
-            cmd.CommandText = "SELECT COUNT(*) || ':' || COALESCE(MAX(updated_at), '') FROM app_colors";
-            signature += "|" + (cmd.ExecuteScalar() as string ?? "");
-        }
-        catch (Microsoft.Data.Sqlite.SqliteException)
-        {
+            try
+            {
+                cmd.CommandText = sql;
+                signature += "|" + (cmd.ExecuteScalar() as string ?? "");
+            }
+            catch (Microsoft.Data.Sqlite.SqliteException)
+            {
+            }
         }
         return signature;
     }

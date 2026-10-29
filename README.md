@@ -21,14 +21,20 @@ calls, no server, no account.
   the daily trend with the heaviest day and days well above trend; a six-month
   activity heat map (Expand for the full history); daily traffic by app; hour
   of day; an optional "one app vs everything else" split; and **where it went**
-  - Wi-Fi against wired, and per network.
-- **By App**: the top 10 as download/upload bars, and every app with its share.
-  Apps with enough history open a detail page: daily usage, hour of day, by
-  network, the programs merged into it, and the raw identities behind it.
+  - Wi-Fi against wired, and each network on a ring.
+- **By App**: the top 10 as download/upload bars, and every app as a table or a
+  grid of cards. Hide an app you do not want listed, or merge one app into
+  another (and separate it again). Apps with enough history open a detail
+  page: daily usage, hour of day, by network, the programs merged into it, and
+  the raw identities behind it.
+- **The tray icon** keeps the latest day's traffic in its tooltip, and its menu
+  follows the app's light or dark theme.
 - **Sync Status**: whether collection is actually running, the run history, and
   the two scheduled tasks as Windows reports them.
 
-Range chips (7d / 30d / 90d / All) apply to every page.
+Every page covers all history; Daily by app and an app's Daily usage each have
+a 7d / 30d / 90d / All menu, opening on 30d. Backspace on an app's page goes
+back to By App.
 
 ## Screenshots
 
@@ -50,7 +56,7 @@ nobody's real usage.
 </details>
 
 <details>
-<summary><b>By App</b> - the top 10 as download/upload bars, and every app with its share</summary>
+<summary><b>By App</b> - the top 10 as download/upload bars, and every app in a table or a grid</summary>
 
 ![By App](docs/screenshots/by-app.webp)
 

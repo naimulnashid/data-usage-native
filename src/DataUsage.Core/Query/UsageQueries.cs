@@ -55,27 +55,62 @@ public sealed partial class UsageQueries(string databasePath, string? splitApp =
 
     private static string? S(SqliteDataReader r, int i) => r.IsDBNull(i) ? null : r.GetString(i);
 
-    /// <summary>A resolved app plus the name it would have without the user's rename.</summary>
-    public sealed record Named(ResolvedApp App, string DisplayName, string BaseName);
+    /// <summary>
+    /// A resolved app plus the name it would have without the user's rename,
+    /// and the family it came from before any merge the user made
+    /// (<see cref="SourceKey"/>, equal to the group key when not merged).
+    /// </summary>
+    public sealed record Named(ResolvedApp App, string DisplayName, string BaseName, string SourceKey, string SourceName);
 
     /// <summary>
-    /// <see cref="AppNames.Resolve"/> with the user's renames laid over the
-    /// family's name. Every query showing a name goes through this, so a rename
-    /// reaches tables, charts, legends and the detail page from one place.
+    /// <see cref="AppNames.Resolve"/> with the user's merges and renames laid
+    /// over the FAMILY (Naming/AppPrefs.cs, Naming/Renames.cs). Every query that
+    /// groups or names an app goes through this - never AppNames.Resolve
+    /// directly - so a merge or a rename reaches tables, charts, legends and
+    /// the detail page from one place. A merged family takes its target's key,
+    /// name and kind; its members keep their own.
     /// </summary>
     private static Func<string, string, Named> Resolver(SqliteConnection db)
     {
         var renames = Renames.Read(db);
+        var merges = AppPrefs.ReadMerges(db);
+        Dictionary<string, ResolvedApp>? families = null;
+        ResolvedApp? FamilyOf(string key)
+        {
+            if (families is null)
+            {
+                families = [];
+                foreach (var (i, k) in Rows(db, "SELECT DISTINCT app_identity, app_kind FROM usage_records WHERE is_aggregate = 0", r => (r.GetString(0), r.GetString(1))))
+                {
+                    var x = AppNames.Resolve(i, k);
+                    families.TryAdd(x.GroupKey, x);
+                }
+            }
+            return families.GetValueOrDefault(key);
+        }
         var cache = new Dictionary<(string, string), Named>();
         return (identity, kind) =>
         {
             if (cache.TryGetValue((identity, kind), out var hit)) return hit;
             var r = AppNames.Resolve(identity, kind);
-            var named = new Named(r, renames.GetValueOrDefault(r.GroupKey) ?? r.DisplayName, r.DisplayName);
+            var family = merges.TryGetValue(r.GroupKey, out var into) && FamilyOf(into) is { } t ? t : r;
+            var app = r with { GroupKey = family.GroupKey, DisplayName = family.DisplayName, Kind = family.Kind };
+            var named = new Named(app, renames.GetValueOrDefault(family.GroupKey) ?? family.DisplayName, family.DisplayName,
+                r.GroupKey, renames.GetValueOrDefault(r.GroupKey) ?? r.DisplayName);
             cache[(identity, kind)] = named;
             return named;
         };
     }
+
+    /// <summary>The family a merged app now belongs to, or null when it is not merged.</summary>
+    public string? MergedInto(string groupKey) => With(db => AppPrefs.ReadMerges(db).GetValueOrDefault(groupKey));
+
+    /// <summary>
+    /// Every family key BEFORE the user's merges: what a hide or a merge may
+    /// name. <see cref="AppNamesByKey"/> folds merged families into their targets.
+    /// </summary>
+    public HashSet<string> AppKeys() => With(db =>
+        Rows(db, "SELECT DISTINCT app_identity, app_kind FROM usage_records WHERE is_aggregate = 0", r => AppNames.Resolve(r.GetString(0), r.GetString(1)).GroupKey).ToHashSet());
 
     private static string? Newest(SqliteConnection db) => Scalar(db, "SELECT MAX(local_date) FROM usage_records") as string;
 
@@ -222,22 +257,23 @@ public sealed partial class UsageQueries(string databasePath, string? splitApp =
 
         // Days counted per GROUP, never summed per identity: two versions of
         // one app share days.
+        var resolve = Resolver(db);
         var daysByGroup = new Dictionary<string, HashSet<string>>();
         foreach (var (i, k, d) in Rows(db, "SELECT DISTINCT app_identity, app_kind, local_date FROM usage_records WHERE is_aggregate = 0 AND local_date >= $p0",
                      r => (r.GetString(0), r.GetString(1), r.GetString(2)), from))
         {
-            var key = AppNames.Resolve(i, k).GroupKey;
+            var key = resolve(i, k).App.GroupKey;
             if (!daysByGroup.TryGetValue(key, out var set)) daysByGroup[key] = set = [];
             set.Add(d);
         }
 
-        var resolve = Resolver(db);
+        var hidden = AppPrefs.ReadHidden(db);
         var grouped = new Dictionary<string, AppRow>();
         foreach (var x in raw)
         {
             var n = resolve(x.I, x.K);
             if (!grouped.TryGetValue(n.App.GroupKey, out var row))
-                grouped[n.App.GroupKey] = row = new AppRow { Key = n.App.GroupKey, Name = n.DisplayName, BaseName = n.BaseName, Kind = n.App.Kind };
+                grouped[n.App.GroupKey] = row = new AppRow { Key = n.App.GroupKey, Name = n.DisplayName, BaseName = n.BaseName, Kind = n.App.Kind, Hidden = hidden.Contains(n.App.GroupKey) };
             row.Sent += x.S;
             row.Received += x.R;
             row.Rows += x.N;
@@ -263,8 +299,11 @@ public sealed partial class UsageQueries(string databasePath, string? splitApp =
     /// the first when the second is true sends them hunting for nothing.
     /// </summary>
     public bool AppExists(string groupKey) => With(db =>
-        Rows(db, "SELECT DISTINCT app_identity, app_kind FROM usage_records WHERE is_aggregate = 0", r => (r.GetString(0), r.GetString(1)))
-            .Any(x => AppNames.Resolve(x.Item1, x.Item2).GroupKey == groupKey));
+    {
+        var resolve = Resolver(db);
+        return Rows(db, "SELECT DISTINCT app_identity, app_kind FROM usage_records WHERE is_aggregate = 0", r => (r.GetString(0), r.GetString(1)))
+            .Any(x => resolve(x.Item1, x.Item2).App.GroupKey == groupKey);
+    });
 
     public AppDetail? AppDetailFor(string groupKey, Scope scope)
     {
@@ -273,13 +312,14 @@ public sealed partial class UsageQueries(string databasePath, string? splitApp =
         return With(db =>
         {
             var from = ScopeFrom(db, scope);
+            var resolve = Resolver(db);
             var mine = Rows(db, "SELECT app_identity, app_kind, SUM(bytes_sent), SUM(bytes_received), COUNT(*) FROM usage_records WHERE is_aggregate = 0 AND local_date >= $p0 GROUP BY app_identity, app_kind",
                     r => (I: r.GetString(0), K: r.GetString(1), S: L(r, 2), R: L(r, 3), N: L(r, 4)), from)
-                .Where(x => AppNames.Resolve(x.I, x.K).GroupKey == groupKey)
+                .Where(x => resolve(x.I, x.K).App.GroupKey == groupKey)
                 .ToList();
             if (mine.Count == 0) return null;
 
-            var resolved = Resolver(db)(mine[0].I, mine[0].K);
+            var resolved = resolve(mine[0].I, mine[0].K);
             var identities = mine.Select(x => new AppIdentity(x.I, x.K, x.S + x.R)).OrderByDescending(x => x.Bytes).ToList();
 
             // Members: the programs a person would name. Days counted per
@@ -288,19 +328,21 @@ public sealed partial class UsageQueries(string databasePath, string? splitApp =
             foreach (var (i, k, d) in Rows(db, "SELECT DISTINCT app_identity, app_kind, local_date FROM usage_records WHERE is_aggregate = 0 AND local_date >= $p0",
                          r => (r.GetString(0), r.GetString(1), r.GetString(2)), from))
             {
-                var res = AppNames.Resolve(i, k);
+                var res = resolve(i, k).App;
                 if (res.GroupKey != groupKey) continue;
                 if (!memberDays.TryGetValue(res.MemberKey, out var set)) memberDays[res.MemberKey] = set = [];
                 set.Add(d);
             }
-            var byMember = new Dictionary<string, (string Name, long Bytes)>();
+            var byMember = new Dictionary<string, (string Name, long Bytes, (string, string)? From)>();
             foreach (var x in mine)
             {
-                var res = AppNames.Resolve(x.I, x.K);
-                var cur = byMember.GetValueOrDefault(res.MemberKey, (res.MemberName, 0));
-                byMember[res.MemberKey] = (cur.Item1, cur.Item2 + x.S + x.R);
+                var n = resolve(x.I, x.K);
+                var res = n.App;
+                (string, string)? source = n.SourceKey == groupKey ? null : (n.SourceKey, n.SourceName);
+                var cur = byMember.GetValueOrDefault(res.MemberKey, (res.MemberName, 0, source));
+                byMember[res.MemberKey] = (cur.Item1, cur.Item2 + x.S + x.R, cur.Item3);
             }
-            var members = byMember.Select(m => new AppMember(m.Key, m.Value.Name, m.Value.Bytes, memberDays.GetValueOrDefault(m.Key)?.Count ?? 0))
+            var members = byMember.Select(m => new AppMember(m.Key, m.Value.Name, m.Value.Bytes, memberDays.GetValueOrDefault(m.Key)?.Count ?? 0, m.Value.From))
                 .OrderByDescending(m => m.Bytes).ToList();
 
             var sent = mine.Sum(x => x.S);
@@ -341,47 +383,61 @@ public sealed partial class UsageQueries(string databasePath, string? splitApp =
 
     // ---- Timeline ---------------------------------------------------------------------
 
-    public TimelineData Timeline(Scope scope, int topN = 8) => With(db =>
+    /// <summary>
+    /// Daily by app for every range the chart's menu offers, from ONE read of
+    /// the per-day rows; each range ranks its own top apps rather than slicing
+    /// the all-time stack. Hour of day covers all history.
+    /// </summary>
+    public TimelineData Timeline(int topN = 8) => With(db =>
     {
-        var from = ScopeFrom(db, scope);
         var resolve = Resolver(db);
-        var totalByApp = new Dictionary<string, long>();
-        var perDay = new SortedDictionary<string, Dictionary<string, long>>(StringComparer.Ordinal);
-        foreach (var (d, i, k, b) in Rows(db, "SELECT local_date, app_identity, app_kind, SUM(bytes_sent + bytes_received) FROM usage_records WHERE is_aggregate = 0 AND local_date >= $p0 GROUP BY local_date, app_identity, app_kind",
-                     r => (r.GetString(0), r.GetString(1), r.GetString(2), L(r, 3)), from))
+        var rows = Rows(db, "SELECT local_date, app_identity, app_kind, SUM(bytes_sent + bytes_received) FROM usage_records WHERE is_aggregate = 0 GROUP BY local_date, app_identity, app_kind",
+                r => (D: r.GetString(0), I: r.GetString(1), K: r.GetString(2), B: L(r, 3)))
+            .Select(x => (x.D, Name: resolve(x.I, x.K).DisplayName, x.B))
+            .ToList();
+        var span = LaptopSpan(db);
+        var known = CollectedDays(db);
+
+        TimelineRange Build(int days)
         {
-            var name = resolve(i, k).DisplayName;
-            totalByApp[name] = totalByApp.GetValueOrDefault(name) + b;
-            if (!perDay.TryGetValue(d, out var day)) perDay[d] = day = [];
-            day[name] = day.GetValueOrDefault(name) + b;
+            var from = ScopeFrom(db, new Scope(days));
+            var totalByApp = new Dictionary<string, long>();
+            var perDay = new SortedDictionary<string, Dictionary<string, long>>(StringComparer.Ordinal);
+            foreach (var (d, name, b) in rows)
+            {
+                if (string.CompareOrdinal(d, from) < 0) continue;
+                totalByApp[name] = totalByApp.GetValueOrDefault(name) + b;
+                if (!perDay.TryGetValue(d, out var day)) perDay[d] = day = [];
+                day[name] = day.GetValueOrDefault(name) + b;
+            }
+
+            var top = totalByApp.OrderByDescending(kv => kv.Value).Take(topN).Select(kv => kv.Key).ToList();
+            var topSet = top.ToHashSet();
+            var hasOther = totalByApp.Count > top.Count;
+            List<string> series = hasOther ? [.. top, "Other"] : top;
+
+            var rowPoints = perDay.Select(kv =>
+            {
+                var values = new long?[series.Count];
+                for (var n = 0; n < top.Count; n++) values[n] = kv.Value.GetValueOrDefault(top[n]);
+                if (hasOther) values[^1] = kv.Value.Where(a => !topSet.Contains(a.Key)).Sum(a => a.Value);
+                return (Date: kv.Key, Values: values);
+            }).ToList();
+
+            // One point per day: 0 across the stack on a quiet collected day,
+            // null on a day never collected - drawn as a break, never a slope.
+            var points = span is null
+                ? []
+                : Days.Fill<(string Date, long?[] Values)>(rowPoints, p => p.Date, Days.LaterOf(from, span.Value.First), span.Value.Last, known,
+                    d => (d, Enumerable.Repeat((long?)0, series.Count).ToArray()),
+                    d => (d, new long?[series.Count]));
+            return new TimelineRange(points, series);
         }
 
-        var top = totalByApp.OrderByDescending(kv => kv.Value).Take(topN).Select(kv => kv.Key).ToList();
-        var topSet = top.ToHashSet();
-        var hasOther = totalByApp.Count > top.Count;
-        var series = hasOther ? [.. top, "Other"] : top;
-
-        var rowPoints = perDay.Select(kv =>
-        {
-            var values = new long?[series.Count];
-            for (var n = 0; n < top.Count; n++) values[n] = kv.Value.GetValueOrDefault(top[n]);
-            if (hasOther) values[^1] = kv.Value.Where(a => !topSet.Contains(a.Key)).Sum(a => a.Value);
-            return (Date: kv.Key, Values: values);
-        }).ToList();
-
-        // One point per day: 0 across the stack on a quiet collected day, null
-        // on a day never collected - drawn as a break, never a slope across it.
-        var span = LaptopSpan(db);
-        var points = span is null
-            ? []
-            : Days.Fill<(string Date, long?[] Values)>(rowPoints, p => p.Date, Days.LaterOf(from, span.Value.First), span.Value.Last, CollectedDays(db),
-                d => (d, Enumerable.Repeat((long?)0, series.Count).ToArray()),
-                d => (d, new long?[series.Count]));
-
-        var hourly = Days.FillHours(Rows(db, "SELECT local_hour, SUM(bytes_sent), SUM(bytes_received) FROM usage_records WHERE is_aggregate = 1 AND local_date >= $p0 GROUP BY local_hour ORDER BY local_hour",
-            r => new HourPoint((int)L(r, 0), L(r, 1), L(r, 2)), from));
-
-        return new TimelineData(points, series, hourly);
+        var ranges = Scope.Ranges.ToDictionary(d => d, Build);
+        var hourly = Days.FillHours(Rows(db, "SELECT local_hour, SUM(bytes_sent), SUM(bytes_received) FROM usage_records WHERE is_aggregate = 1 GROUP BY local_hour ORDER BY local_hour",
+            r => new HourPoint((int)L(r, 0), L(r, 1), L(r, 2))));
+        return new TimelineData(ranges, hourly);
     });
 
     // ---- Sync status ---------------------------------------------------------------------
@@ -509,9 +565,9 @@ public sealed partial class UsageQueries(string databasePath, string? splitApp =
             }
 
             var networks = perProfile.Select(kv =>
-                kv.Key == "0" ? new NetworkRow("0", "No network profile", false, [], kv.Value.Total)
-                : labels.TryGetValue(kv.Key, out var pr) ? new NetworkRow(kv.Key, pr.Label, pr.Named, pr.Aliases, kv.Value.Total)
-                : new NetworkRow(kv.Key, PrettyInterface(kv.Value.Type), false, [], kv.Value.Total))
+                kv.Key == "0" ? new NetworkRow("0", "No network profile", false, [], kv.Value.Total, KindOf(kv.Value.Type))
+                : labels.TryGetValue(kv.Key, out var pr) ? new NetworkRow(kv.Key, pr.Label, pr.Named, pr.Aliases, kv.Value.Total, KindOf(kv.Value.Type))
+                : new NetworkRow(kv.Key, PrettyInterface(kv.Value.Type), false, [], kv.Value.Total, KindOf(kv.Value.Type)))
                 .OrderByDescending(n => n.Total).ToList();
 
             return new NetworkBreakdown(total, kinds.Select(kv => (kv.Key, kv.Value)).ToList(), networks);

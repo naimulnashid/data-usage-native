@@ -9,8 +9,9 @@ namespace DataUsage.App.Charts;
 
 /// <summary>
 /// Daily total: a smooth area over every day in the range, broken where a day
-/// was never collected. A day well above trend turns the warning colour in its
-/// tooltip; the card's subtitle counts them.
+/// was never collected. A day well above trend carries a point in the line's
+/// colour and turns the warning colour in its tooltip; the card's subtitle
+/// counts them.
 /// </summary>
 /// <remarks>
 /// A spike is more than 2.5x the mean of ACTIVE days. Red is reserved for
@@ -85,6 +86,11 @@ public sealed class TrendChart : ChartSurface
                 StrokeLineJoin = PenLineJoin.Round,
             });
         }
+        // A point marks each day well above trend, in the line's own colour:
+        // the line says where, the point says "this one". The warning colour
+        // stays in the tooltip's wording, so the plot keeps one hue.
+        for (var i = 0; i < n; i++)
+            if (_points[i] is { } at && Spike(_days[i])) layer.Children.Add(Dot(at, 4.5, Palette.AccentBrush, Palette.SurfaceBrush));
         Canvas.Children.Add(layer);
         if (animate) Axes.RevealLeft(layer, W);
 
@@ -95,9 +101,9 @@ public sealed class TrendChart : ChartSurface
         Canvas.Children.Add(_activeDot);
     }
 
-    private static Ellipse Dot(Point at, double r, Brush fill)
+    private static Ellipse Dot(Point at, double r, Brush fill, Brush? ring = null)
     {
-        var dot = new Ellipse { Width = r * 2, Height = r * 2, Fill = fill, Stroke = Palette.BgBrush, StrokeThickness = 2 };
+        var dot = new Ellipse { Width = r * 2, Height = r * 2, Fill = fill, Stroke = ring ?? Palette.BgBrush, StrokeThickness = 2 };
         Microsoft.UI.Xaml.Controls.Canvas.SetLeft(dot, at.X - r);
         Microsoft.UI.Xaml.Controls.Canvas.SetTop(dot, at.Y - r);
         return dot;

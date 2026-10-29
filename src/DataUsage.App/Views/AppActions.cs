@@ -235,10 +235,132 @@ public static class AppActions
     }
 
     /// <summary>
-    /// A name cell: the mark, the name (a link when the app earns a page), the
-    /// kind badge for non-path apps, and the pencil on hover.
+    /// The "..." beside the pencil: hide the app from the By App page, or
+    /// merge it into another. See Naming/AppPrefs.cs for what each means -
+    /// hiding is that page's view only, merging is read everywhere.
     /// </summary>
-    public static StackPanel NameCell(PageContext ctx, string key, string name, string baseName, string kind, bool detailed, double size = 15.5)
+    public static Button Menu(PageContext ctx, string key, string name, bool hidden, IReadOnlyList<(string Key, string Name)> candidates, bool alwaysVisible = false)
+    {
+        var button = new Button
+        {
+            Content = new FontIcon { Glyph = "\uE712", FontSize = 14, Foreground = Palette.TextFaintBrush },
+            Padding = new Thickness(5),
+            MinWidth = 0,
+            MinHeight = 0,
+            Background = Palette.TransparentBrush,
+            BorderThickness = new Thickness(0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Opacity = alwaysVisible ? 1 : 0,
+            OpacityTransition = new ScalarTransition { Duration = TimeSpan.FromMilliseconds(150) },
+        };
+        button.Resources["ButtonBackgroundPointerOver"] = Palette.SurfaceHoverBrush;
+        button.Resources["ButtonBackgroundPressed"] = Palette.SurfaceHoverBrush;
+        ToolTipService.SetToolTip(button, Ui.TipContent("Hide or merge"));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, $"More for {name}");
+        button.GotFocus += (_, _) => button.Opacity = 1;
+
+        var menu = new MenuFlyout { Placement = FlyoutPlacementMode.BottomEdgeAlignedRight };
+        var hide = new MenuFlyoutItem
+        {
+            Text = hidden ? "Show on this page" : "Hide from this page",
+            Icon = new FontIcon { Glyph = hidden ? "\uE890" : "\uED1A" },
+        };
+        hide.Click += async (_, _) =>
+        {
+            await Task.Run(() =>
+            {
+                using var db = OpenForWrite(ctx);
+                AppPrefs.SetHidden(db, key, !hidden);
+            });
+            await ctx.State.ReloadAsync();
+        };
+        menu.Items.Add(hide);
+        var others = candidates.Where(c => c.Key != key).OrderBy(c => c.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+        var merge = new MenuFlyoutItem { Text = "Merge into…", Icon = new FontIcon { Glyph = "\uE71B" }, IsEnabled = others.Count > 0 };
+        merge.Click += (_, _) => MergeFlyout(ctx, key, name, others).ShowAt(button);
+        menu.Items.Add(merge);
+        button.Flyout = menu;
+        return button;
+    }
+
+    private static Flyout MergeFlyout(PageContext ctx, string key, string name, IReadOnlyList<(string Key, string Name)> others)
+    {
+        var stack = new StackPanel { Width = 300, Spacing = 10 };
+        stack.Children.Add(Ui.Text($"Count {name} as part of", 14, 600, wrap: true));
+        var box = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch, PlaceholderText = "Choose an app", FontFamily = Fonts.Sans };
+        foreach (var o in others) box.Items.Add(o.Name);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(box, $"App to merge {name} into");
+        stack.Children.Add(box);
+        stack.Children.Add(Ui.Text("Its traffic is then shown as that app's on every page. Separate it again from that app's Merged apps.", 12.5, 400, Palette.TextFaintBrush, wrap: true));
+        var error = Ui.Text("", 13, 500, Palette.WarnBrush, wrap: true);
+        error.Visibility = Visibility.Collapsed;
+        stack.Children.Add(error);
+        var go = Ui.Button("Merge", primary: true, fontSize: 14, padding: new Thickness(16, 7, 16, 7));
+        go.HorizontalAlignment = HorizontalAlignment.Right;
+        go.IsEnabled = false;
+        box.SelectionChanged += (_, _) => go.IsEnabled = box.SelectedIndex >= 0;
+        stack.Children.Add(go);
+        var flyout = new Flyout { Content = stack, Placement = FlyoutPlacementMode.BottomEdgeAlignedRight };
+        go.Click += async (_, _) =>
+        {
+            if (box.SelectedIndex < 0) return;
+            var into = others[box.SelectedIndex].Key;
+            var err = await Task.Run(() => Merge(ctx, key, into));
+            if (err != MergeError.None)
+            {
+                error.Text = AppPrefs.Message(err);
+                error.Visibility = Visibility.Visible;
+                return;
+            }
+            flyout.Hide();
+            await ctx.State.ReloadAsync();
+        };
+        return flyout;
+    }
+
+    /// <summary>Merges, or separates again with <paramref name="into"/> null.</summary>
+    private static MergeError Merge(PageContext ctx, string key, string? into)
+    {
+        var known = ctx.State.Queries!.AppKeys();
+        using var db = OpenForWrite(ctx);
+        return AppPrefs.SetMerge(db, key, into, known);
+    }
+
+    /// <summary>Separate: undo a merge, from the target's Merged apps card.</summary>
+    public static Button Separate(PageContext ctx, string key, string name)
+    {
+        var button = new Button
+        {
+            Content = new FontIcon { Glyph = "\uE8C6", FontSize = 14, Foreground = Palette.TextMutedBrush },
+            Padding = new Thickness(7),
+            MinWidth = 0,
+            MinHeight = 0,
+            CornerRadius = new CornerRadius(15),
+            Background = Palette.TransparentBrush,
+            BorderBrush = Palette.BorderBrightBrush,
+            BorderThickness = new Thickness(1),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        button.Resources["ButtonBackgroundPointerOver"] = Palette.SurfaceHoverBrush;
+        button.Resources["ButtonBorderBrushPointerOver"] = Palette.AccentBrush;
+        ToolTipService.SetToolTip(button, Ui.TipContent($"Separate: show {name} as an app of its own again"));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, $"Separate {name}");
+        button.Click += async (_, _) =>
+        {
+            var err = await Task.Run(() => Merge(ctx, key, null));
+            if (err != MergeError.None) { _ = Shell.ShowMessage(ctx.Window, "Could not separate", AppPrefs.Message(err)); return; }
+            await ctx.State.ReloadAsync();
+        };
+        return button;
+    }
+
+    /// <summary>
+    /// A name cell: the mark, the name (a link when the app earns a page), the
+    /// kind badge for non-path apps, and the pencil and the menu on hover.
+    /// </summary>
+    public static StackPanel NameCell(PageContext ctx, string key, string name, string baseName, string kind, bool detailed, double size = 15.5,
+        bool hidden = false, IReadOnlyList<(string Key, string Name)>? candidates = null)
     {
         var state = ctx.State;
         var cell = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 9.6, Background = Palette.TransparentBrush };
@@ -256,10 +378,21 @@ public static class AppActions
             cell.Children.Add(text);
         }
         if (kind != "path") cell.Children.Add(Ui.Badge(kind == "appx" ? "store" : kind, size: 11.2, padding: new Thickness(7, 1.5, 7, 2)));
+        if (hidden) cell.Children.Add(Ui.Badge("hidden", size: 11.2, padding: new Thickness(7, 1.5, 7, 2)));
         var pencil = Pencil(ctx, key, name, baseName);
         cell.Children.Add(pencil);
-        cell.PointerEntered += (_, _) => pencil.Opacity = 1;
-        cell.PointerExited += (_, _) => { if (pencil.FocusState == FocusState.Unfocused) pencil.Opacity = 0; };
+        var menu = candidates is null ? null : Menu(ctx, key, name, hidden, candidates);
+        if (menu is not null) cell.Children.Add(menu);
+        cell.PointerEntered += (_, _) =>
+        {
+            pencil.Opacity = 1;
+            if (menu is not null) menu.Opacity = 1;
+        };
+        cell.PointerExited += (_, _) =>
+        {
+            if (pencil.FocusState == FocusState.Unfocused) pencil.Opacity = 0;
+            if (menu is not null && menu.FocusState == FocusState.Unfocused) menu.Opacity = 0;
+        };
         AcceptLogoDrop(ctx, cell, name);
         return cell;
     }

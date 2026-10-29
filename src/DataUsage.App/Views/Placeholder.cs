@@ -59,7 +59,7 @@ public static class Placeholder
     {
         var series = Apps.Append("Other").ToList();
         var points = Daily().Select(d => (d.Date, series.Select((_, i) => (long?)((i + 1) * 100 * MB)).ToArray())).ToList();
-        return new TimelineData(points, series, Hourly());
+        return new TimelineData(Scope.Ranges.ToDictionary(d => d, d => new TimelineRange(points.TakeLast(Math.Min(d, points.Count)).ToList(), series)), Hourly());
     }
 
     public static NetworkBreakdown Networks() => new(

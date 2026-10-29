@@ -16,9 +16,11 @@ public sealed record AppIcon(string Path, bool Plate);
 /// <para><b>Which logos need a light plate cannot be guessed, only
 /// measured</b>, and the MARK is measured, not the file: a sparse glyph by its
 /// mean luma, a full-bleed tile by whether it carries a light glyph of its own.
-/// ASUS (pure black), OpenCode (#4B4646) and Cursor (mean 69) are plated;
-/// Ollama looks as if it should be and must not be (its file is the off-white
-/// variant).</para>
+/// ASUS (a pure-black wordmark) is plated; Ollama looks as if it should be and
+/// must not be (its file is the off-white variant). Cursor and OpenCode were
+/// plated until 2026-10-29, when their files were tiles with their own ground
+/// (Cursor near-black under a light cube, OpenCode a #F1ECEC frame), and the
+/// plate only boxed them in white.</para>
 /// </remarks>
 public static class AppIcons
 {
@@ -27,7 +29,7 @@ public static class AppIcons
         ".svg", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".ico",
     };
 
-    public static readonly HashSet<string> PlateStems = new(StringComparer.OrdinalIgnoreCase) { "asus", "opencode", "cursor" };
+    public static readonly HashSet<string> PlateStems = new(StringComparer.OrdinalIgnoreCase) { "asus" };
 
     /// <summary>Display name to file stem.</summary>
     public static readonly Dictionary<string, string> Aliases = new()

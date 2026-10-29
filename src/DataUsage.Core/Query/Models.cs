@@ -21,6 +21,13 @@ public readonly record struct Scope(int Days)
 
     public static Scope All => new(AllDays);
 
+    /// <summary>
+    /// What a chart's range menu opens on. Pages are not scoped any more
+    /// (0.3.0): every figure covers all history, and only Daily by app and an
+    /// app's Daily usage carry a range of their own.
+    /// </summary>
+    public const int DefaultChartDays = 30;
+
     public bool IsAll => Days >= AllDays;
 
     public string Label => IsAll ? "All" : $"{Days}d";
@@ -58,6 +65,8 @@ public sealed class AppRow
     public long Rows { get; set; }
     public int Days { get; set; }
     public bool Detailed { get; set; }
+    /// <summary>Hidden from the By App page by the user; still counted everywhere.</summary>
+    public bool Hidden { get; set; }
 }
 
 public sealed record ByAppData(IReadOnlyList<AppRow> Apps, long NamedTotal, long Unattributed, long HeadlineTotal);
@@ -66,7 +75,8 @@ public sealed record AppNetwork(string Id, string Label, long Bytes);
 
 public sealed record AppIdentity(string Identity, string Kind, long Bytes);
 
-public sealed record AppMember(string Key, string Name, long Bytes, int Days);
+/// <param name="MergedFrom">The family the user merged this program in with (key, name), which the page can separate again; null when built in.</param>
+public sealed record AppMember(string Key, string Name, long Bytes, int Days, (string Key, string Name)? MergedFrom = null);
 
 public sealed record AppDetail(
     string Key,
@@ -86,10 +96,15 @@ public sealed record AppDetail(
     IReadOnlyList<AppIdentity> Identities,
     IReadOnlyList<AppMember> Members);
 
-public sealed record TimelineData(
+/// <summary>One range's stack: its own top apps, so the band that dominates is that period's.</summary>
+public sealed record TimelineRange(
     /// <summary>Per day, bytes per series in <see cref="Series"/> order; null on a day never collected.</summary>
     IReadOnlyList<(string Date, long?[] Values)> Points,
-    IReadOnlyList<string> Series,
+    IReadOnlyList<string> Series);
+
+/// <summary>Daily by app for every range in the chart's menu (keyed by days), and hour of day over all history.</summary>
+public sealed record TimelineData(
+    IReadOnlyDictionary<int, TimelineRange> Ranges,
     IReadOnlyList<HourPoint> Hourly);
 
 public sealed record SyncRun(
@@ -123,7 +138,7 @@ public enum LinkKind
     Other,
 }
 
-public sealed record NetworkRow(string Id, string Label, bool Named, IReadOnlyList<string> Aliases, long Total);
+public sealed record NetworkRow(string Id, string Label, bool Named, IReadOnlyList<string> Aliases, long Total, LinkKind Kind = LinkKind.Wifi);
 
 public sealed record NetworkBreakdown(long Total, IReadOnlyList<(LinkKind Kind, long Total)> ByKind, IReadOnlyList<NetworkRow> Networks);
 

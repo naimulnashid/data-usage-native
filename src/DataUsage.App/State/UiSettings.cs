@@ -1,6 +1,5 @@
 using System.Text.Json;
 using DataUsage.Core;
-using DataUsage.Core.Query;
 
 namespace DataUsage.App.State;
 
@@ -11,8 +10,11 @@ namespace DataUsage.App.State;
 /// </summary>
 public sealed class UiSettings
 {
-    /// <summary>The range chips. Opens on All: the app leads with everything it holds.</summary>
-    public int ScopeDays { get; set; } = Scope.AllDays;
+    /// <summary>
+    /// By App's list: "table" or "grid". The range chips that sat beside it
+    /// (ScopeDays) went in 0.3.0; an old file's value is ignored on load.
+    /// </summary>
+    public string AppsView { get; set; } = "table";
 
     /// <summary>Re-read the database when a collector run lands in it.</summary>
     public bool AutoRefresh { get; set; } = true;

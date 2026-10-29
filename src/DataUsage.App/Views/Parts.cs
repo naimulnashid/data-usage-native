@@ -205,4 +205,35 @@ public static class Parts
 
     /// <summary>A mono cell (dates in the run table, raw SRUM identities).</summary>
     public static TextBlock MonoCell(string text, Brush? brush = null, double size = 14.5) => Ui.Mono(text, size, brush ?? Palette.TextBrush);
+
+    /// <summary>
+    /// A chart's own range, 7d / 30d / 90d / All, in its panel's head: the web
+    /// dashboard's RangeMenu. It replaced the top bar's chips (0.3.0), which
+    /// scoped every page; only the daily charts carry one.
+    /// </summary>
+    public static StackPanel RangeBox(int days, Action<int> changed, string label)
+    {
+        var box = new ComboBox { FontFamily = Fonts.Sans, FontSize = 14, MinWidth = 86, VerticalAlignment = VerticalAlignment.Center };
+        foreach (var d in Scope.Ranges) box.Items.Add(new Scope(d).Label);
+        box.SelectedIndex = Math.Max(0, Array.IndexOf(Scope.Ranges, days));
+        box.SelectionChanged += (_, _) =>
+        {
+            if (box.SelectedIndex >= 0 && Scope.Ranges[box.SelectedIndex] != days) changed(Scope.Ranges[box.SelectedIndex]);
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(box, label);
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Top };
+        var icon = new FontIcon { Glyph = "\uE787", FontSize = 14, Foreground = Palette.TextMutedBrush, VerticalAlignment = VerticalAlignment.Center };
+        row.Children.Add(icon);
+        row.Children.Add(box);
+        return row;
+    }
+
+    /// <summary>The kind of link as a Segoe Fluent mark: what the colour squares used to stand in for.</summary>
+    public static string LinkGlyph(LinkKind kind) => kind switch
+    {
+        LinkKind.Wifi => "\uE701",
+        LinkKind.Wired => "\uE839",
+        LinkKind.Mobile => "\uE86F",
+        _ => "\uE774",
+    };
 }

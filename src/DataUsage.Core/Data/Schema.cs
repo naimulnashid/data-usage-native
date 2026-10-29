@@ -7,7 +7,7 @@ namespace DataUsage.Core.Data;
 /// </summary>
 public static class Schema
 {
-    public const int Version = 2;
+    public const int Version = 3;
 
     public const string Sql = """
         PRAGMA journal_mode = WAL;
@@ -126,6 +126,24 @@ public static class Schema
           device     TEXT NOT NULL,
           app_key    TEXT NOT NULL,
           color      TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (device, app_key)
+        );
+
+        -- Apps hidden from the By App page, and apps merged into another
+        -- (version 3, 2026-10-29), keyed like app_renames. The web
+        -- dashboard's tables, column for column. See Naming/AppPrefs.cs.
+        CREATE TABLE IF NOT EXISTS app_hidden (
+          device     TEXT NOT NULL,
+          app_key    TEXT NOT NULL,
+          hidden_at  TEXT NOT NULL,
+          PRIMARY KEY (device, app_key)
+        );
+
+        CREATE TABLE IF NOT EXISTS app_merges (
+          device     TEXT NOT NULL,
+          app_key    TEXT NOT NULL,
+          into_key   TEXT NOT NULL,
           updated_at TEXT NOT NULL,
           PRIMARY KEY (device, app_key)
         );
