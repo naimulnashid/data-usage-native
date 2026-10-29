@@ -178,7 +178,7 @@ public static class AppActions
 
     private static (RenameError, string?) Rename(PageContext ctx, string key, string requested, string baseName)
     {
-        var current = ctx.State.Queries!.AppNamesByKey().ToDictionary(kv => kv.Key, kv => kv.Value.Name);
+        var current = ctx.State.Queries!.AppNamesByKey();
         using var db = OpenForWrite(ctx);
         return Renames.Save(db, key, requested, current, baseName);
     }

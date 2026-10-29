@@ -145,7 +145,7 @@ public class ViewTests
             TestDb.Row("2026-09-01T10:01:00Z", 618, @"\device\harddiskvolume4\x\chrome.exe", 1, 10),
         ]);
         var q = new UsageQueries(t.Path_);
-        var current = q.AppNamesByKey().ToDictionary(kv => kv.Key, kv => kv.Value.Name);
+        var current = q.AppNamesByKey();
         Assert.Equal(RenameError.Taken, Renames.Save(t.Conn, "edge", "chrome", current, "Microsoft Edge").Error);
         Assert.Equal(RenameError.Reserved, Renames.Save(t.Conn, "edge", "Other", current, "Microsoft Edge").Error);
         Assert.Equal(RenameError.BadName, Renames.Save(t.Conn, "edge", new string('x', 61), current, "Microsoft Edge").Error);
@@ -157,6 +157,30 @@ public class ViewTests
 
         Renames.Save(t.Conn, "edge", "", current, "Microsoft Edge");
         Assert.Equal("Microsoft Edge", q.ByApp(Scope.All).Apps[0].Name);
+    }
+
+    [Fact]
+    public void ResettingARenameCannotTakeANameAnotherAppNowShows()
+    {
+        using var t = new TestDb();
+        UsageDb.InsertRows(t.Conn,
+        [
+            TestDb.Row("2026-09-01T10:01:00Z", 617, @"\device\harddiskvolume4\x\msedge.exe", 1, 100),
+            TestDb.Row("2026-09-01T10:01:00Z", 618, @"\device\harddiskvolume4\x\chrome.exe", 1, 10),
+        ]);
+        var q = new UsageQueries(t.Path_);
+        var chrome = q.AppNamesByKey().First(kv => kv.Value.Base == "Chrome").Key;
+        Assert.Equal(RenameError.None, Renames.Save(t.Conn, "edge", "Edge", q.AppNamesByKey(), "Microsoft Edge").Error);
+        Assert.Equal(RenameError.None, Renames.Save(t.Conn, chrome, "Microsoft Edge", q.AppNamesByKey(), "Chrome").Error);
+
+        // Back to its own name, by reset or by typing it: either way two apps would show it.
+        Assert.Equal(RenameError.Taken, Renames.Save(t.Conn, "edge", "", q.AppNamesByKey(), "Microsoft Edge").Error);
+        Assert.Equal(RenameError.Taken, Renames.Save(t.Conn, "edge", "Microsoft Edge", q.AppNamesByKey(), "Microsoft Edge").Error);
+        Assert.Equal("Edge", Renames.Read(t.Conn)["edge"]);
+
+        // Free again once the other app lets go of it.
+        Assert.Equal(RenameError.None, Renames.Save(t.Conn, chrome, "", q.AppNamesByKey(), "Chrome").Error);
+        Assert.Equal((RenameError.None, "Microsoft Edge"), Renames.Save(t.Conn, "edge", "", q.AppNamesByKey(), "Microsoft Edge"));
     }
 
     [Theory]
@@ -201,7 +225,7 @@ public class ViewTests
         Assert.Equal("#e91e63", q.ColorOverrideMap()["edge"]);
 
         // Under a new name too: the override is keyed by the family, not the label.
-        var current = q.AppNamesByKey().ToDictionary(kv => kv.Key, kv => kv.Value.Name);
+        var current = q.AppNamesByKey();
         Renames.Save(t.Conn, "edge", "Edge", current, "Microsoft Edge");
         Assert.Equal("#e91e63", q.ColorMap()["Edge"]);
 

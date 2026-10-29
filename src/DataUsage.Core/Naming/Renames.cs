@@ -68,22 +68,30 @@ public static partial class Renames
 
     /// <summary>
     /// Validate and store, or clear, one rename. <paramref name="current"/> is
-    /// every family as shown now (renames included); an empty name or the base
-    /// name clears the override.
+    /// every family as shown now (renames included) beside its name without
+    /// one; an empty name or the base name clears the override.
     /// </summary>
+    /// <remarks>
+    /// Clearing is checked for collisions too: rename A away from "Alpha",
+    /// rename B to "Alpha", reset A, and two families showed "Alpha". A clash
+    /// with a family that is not renamed is let through, since it predates
+    /// any rename and refusing would make the rename impossible to undo.
+    /// </remarks>
     public static (RenameError Error, string? Name) Save(SqliteConnection db, string key, string? requested,
-        IReadOnlyDictionary<string, string> current, string baseName)
+        IReadOnlyDictionary<string, (string Name, string Base)> current, string baseName)
     {
         if (!current.ContainsKey(key)) return (RenameError.UnknownApp, null);
         var reset = requested is not null && requested.Trim().Length == 0;
         var name = reset ? baseName : Clean(requested);
         if (name is null) return (RenameError.BadName, null);
 
-        if (!reset && name != baseName)
+        var toBase = name == baseName;
+        if (!toBase && Reserved.Contains(name)) return (RenameError.Reserved, null);
+        foreach (var (k, shown) in current)
         {
-            if (Reserved.Contains(name)) return (RenameError.Reserved, null);
-            foreach (var (k, shown) in current)
-                if (k != key && string.Equals(shown, name, StringComparison.OrdinalIgnoreCase)) return (RenameError.Taken, null);
+            if (k == key || !string.Equals(shown.Name, name, StringComparison.OrdinalIgnoreCase)) continue;
+            if (toBase && shown.Name == shown.Base) continue;
+            return (RenameError.Taken, null);
         }
 
         if (name == baseName)
