@@ -58,15 +58,15 @@ public sealed class OverviewPage(PageContext ctx) : IPage
         var sub = $"Latest data {Format.DayLong(data.LatestDate)}";
         if (state.Sync?.HoursSinceSuccess is { } h) sub += $" · collected {Format.Relative(h)}";
         var stale = state.Sync?.HoursSinceSuccess > 48;
-        page.Children.Add(Parts.PageHead(state.Device.Label, sub, after: stale ? Ui.Badge("collector may be stalled", Ui.BadgeKind.Bad) : null));
+        var coverage = data.Coverage is { } c ? $"{Format.DayShort(c.First)} – {Format.DayShort(c.Last)} · {c.Days} days" : null;
+        page.Children.Add(Parts.PageHead(state.Device.Label, sub, after: stale ? Ui.Badge("collector may be stalled", Ui.BadgeKind.Bad) : null, aside: coverage));
 
         // ---- Score cards: widest window first. "All" ignores the range, and
         // leads with the accent: it is the figure this app exists to preserve.
         var today = DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd");
         var latestLabel = data.LatestDate == today ? "Today" : $"Latest day · {Format.DayShort(data.LatestDate)}";
-        var coverage = data.Coverage is { } c ? $"{Format.DayShort(c.First)} – {Format.DayShort(c.Last)} · {c.Days} days" : null;
         var cards = Parts.Grid(215,
-            Parts.StatCard("All", data.All, accent: true, range: coverage),
+            Parts.StatCard("All", data.All, accent: true),
             Parts.StatCard("Last 30 days", data.Month, delay: 60),
             Parts.StatCard("Last 7 days", data.Week, delay: 120),
             Parts.StatCard(latestLabel, data.Today, delay: 180));

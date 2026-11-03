@@ -12,7 +12,8 @@ namespace DataUsage.App.Views;
 public static class Parts
 {
     /// <summary>The page's h1 and the line under it.</summary>
-    public static StackPanel PageHead(string title, string? sub, UIElement? before = null, UIElement? after = null, UIElement? titleExtra = null)
+    /// <param name="aside">The right end of the sub line: an overview's span of history held.</param>
+    public static StackPanel PageHead(string title, string? sub, UIElement? before = null, UIElement? after = null, UIElement? titleExtra = null, string? aside = null)
     {
         var head = new StackPanel { Margin = new Thickness(0, 0, 0, 35) };
         if (before is not null) head.Children.Add(before);
@@ -27,7 +28,24 @@ public static class Parts
             var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 11, Margin = new Thickness(0, 6, 0, 0) };
             line.Children.Add(Ui.Text(sub, 15, 400, Palette.TextMutedBrush, wrap: true));
             if (after is not null) line.Children.Add(after);
-            head.Children.Add(line);
+            if (aside is null)
+            {
+                head.Children.Add(line);
+            }
+            else
+            {
+                // Freshness on the left, the span of history on the right.
+                var row = new Microsoft.UI.Xaml.Controls.Grid { ColumnSpacing = 24 };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.Children.Add(line);
+                var right = Ui.Text(aside, 15, 400, Palette.TextMutedBrush);
+                right.Margin = new Thickness(0, 6, 0, 0);
+                right.VerticalAlignment = VerticalAlignment.Top;
+                Microsoft.UI.Xaml.Controls.Grid.SetColumn(right, 1);
+                row.Children.Add(right);
+                head.Children.Add(row);
+            }
         }
         return head;
     }
@@ -65,7 +83,7 @@ public static class Parts
     /// One score card. All carry sent and received: the split IS the shape of
     /// a machine that seeds or uploads.
     /// </summary>
-    public static Border StatCard(string label, Totals totals, bool accent = false, string? range = null, int delay = 0)
+    public static Border StatCard(string label, Totals totals, bool accent = false, int delay = 0)
     {
         var stack = new StackPanel();
         stack.Children.Add(StatLabel(label));
@@ -73,12 +91,6 @@ public static class Parts
         value.Margin = new Thickness(0, 8, 0, 0);
         stack.Children.Add(value);
         stack.Children.Add(Io(totals.Sent, totals.Received));
-        if (range is not null)
-        {
-            var r = Ui.Text(range, 13, 400, Palette.TextFaintBrush);
-            r.Margin = new Thickness(0, 6, 0, 0);
-            stack.Children.Add(r);
-        }
         var card = Ui.Card(stack, new Thickness(25.6), hover: true);
         Ui.Rise(card, delay);
         return card;
