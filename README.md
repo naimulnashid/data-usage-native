@@ -183,7 +183,11 @@ folder). Set both, or a demo run writes into your real preferences.
 - **Zoom** like a browser: **Ctrl+Plus**, **Ctrl+Minus**, **Ctrl+mouse wheel**,
   **Ctrl+0** to reset (remembered). Also in the settings menu.
 - **Tray**: closing the window keeps the app in the notification area.
-  Right-click it for Sync now, the options and Exit.
+  Right-click it for Sync now, the options and Exit. The icon is a small
+  process of its own (about 15 MB of private memory on the author's PC,
+  measured 2026-11-11); the window is another, which ends when it closes and
+  gives its memory back. Notifications come from the tray icon, so they need
+  it running.
 - **Start at login**: settings menu or tray. It starts straight to the tray.
 - **Light or dark**: Settings > Theme, or follow Windows' setting.
 
@@ -198,7 +202,10 @@ higher whenever the PC has used more than one. The per-network rows under
 
 - **App**: WinUI 3 (Windows App SDK) on .NET 10, built in code rather than
   XAML; charts are drawn on XAML shapes. H.NotifyIcon for the tray, Svg.Skia
-  for SVG logos, Geist for type.
+  for SVG logos, Geist for type. One exe runs as separate processes: the
+  tray icon, which never loads WinUI; the window (`DataUsage.exe
+  --dashboard`), which the tray starts; and each collector run
+  (`--collect`).
 - **Core**: SRUM read through Windows' own ESE engine (`esent.dll`, via
   ManagedEsent), so no third-party parser; SQLite (Microsoft.Data.Sqlite) for
   the history.

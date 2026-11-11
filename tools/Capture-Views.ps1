@@ -40,6 +40,6 @@ foreach ($view in $Views) {
   $clickArg = @(if ($click) { '-Click' })
   $env:DATAUSAGE_DEBUG_VIEW = $spec
   # Windows PowerShell 5.1, which has System.Drawing built in.
-  powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Capture-Window.ps1') -Exe $exe -Out (Join-Path $root "screenshots\$name.png") @sizing -WaitSeconds $WaitSeconds -HoverX $hoverX -HoverY $hoverY @clickArg -Close
+  powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Capture-Window.ps1') -Exe $exe -Arguments '--dashboard' -Out (Join-Path $root "screenshots\$name.png") @sizing -WaitSeconds $WaitSeconds -HoverX $hoverX -HoverY $hoverY @clickArg -Close
   Start-Sleep -Milliseconds 800
 }

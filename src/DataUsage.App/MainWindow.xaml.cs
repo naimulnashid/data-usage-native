@@ -83,11 +83,10 @@ public sealed partial class MainWindow : Window
         ConfigureWindow();
         BuildShell();
         Root.RequestedTheme = Palette.IsLight ? ElementTheme.Light : ElementTheme.Dark;
-        TrayHost.ApplyMenuTheme(Palette.IsLight);
+        MenuTheme.Apply(Palette.IsLight);
 
         state.Changed += () =>
         {
-            if (_inTray) return;
             UpdateChrome();
             Rebuild(keepScroll: true);
         };
@@ -104,18 +103,15 @@ public sealed partial class MainWindow : Window
     private readonly Windows.UI.ViewManagement.UISettings _systemColors = new();
 
     /// <summary>Whether a theme choice means light, reading Windows' app mode for "system".</summary>
-    private bool ResolveTheme(string choice) => choice switch
-    {
-        "light" => true,
-        "system" => _systemColors.GetColorValue(Windows.UI.ViewManagement.UIColorType.Background) is { R: > 128 },
-        _ => false,
-    };
+    private bool ResolveTheme(string choice) => MenuTheme.IsLight(choice, _systemColors);
 
     private void SetTheme(string choice)
     {
         _settings.Theme = choice;
         _settings.Save();
         Palette.Apply(ResolveTheme(choice));
+        // The tray's menu is the tray process's: it re-reads the choice.
+        SettingsChanged?.Invoke();
     }
 
     /// <summary>
@@ -126,7 +122,7 @@ public sealed partial class MainWindow : Window
     private void OnThemeChanged()
     {
         Root.RequestedTheme = Palette.IsLight ? ElementTheme.Light : ElementTheme.Dark;
-        TrayHost.ApplyMenuTheme(Palette.IsLight);
+        MenuTheme.Apply(Palette.IsLight);
         PaintCaptionButtons();
         UpdateChrome();
         Rebuild(keepScroll: true);
@@ -165,50 +161,28 @@ public sealed partial class MainWindow : Window
             presenter.PreferredMinimumWidth = (int)(760 * scale);
             presenter.PreferredMinimumHeight = (int)(520 * scale);
         }
-
-        AppWindow.Closing += (_, args) =>
-        {
-            if (!_settings.CloseToTray) return;
-            // Keep running in the tray: the numbers and the problem
-            // notifications stay live, and the window comes back from the icon.
-            args.Cancel = true;
-            AppWindow.Hide();
-            EnterTray();
-            ClosedToTray?.Invoke();
-        };
     }
 
-    private bool _inTray;
-
-    /// <summary>Nothing is on screen, so nothing is built: the tray process sits small.</summary>
-    public void EnterTray()
-    {
-        _inTray = true;
-        _pageHost.Content = null;
-        _page = null;
-        GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
-    }
-
-    /// <summary>Raised when the close button sent the window to the tray.</summary>
-    public event Action? ClosedToTray;
-
-    /// <summary>Raised when a setting the tray also shows was changed here.</summary>
+    /// <summary>Raised when a setting the tray process also goes by was changed here.</summary>
     public event Action? SettingsChanged;
 
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hwnd);
+
+    /// <summary>
+    /// Brings the window forward: asked for again while already open (the
+    /// tray icon, a second launch). Activate alone leaves it behind whatever
+    /// is in front when the request came from another process.
+    /// </summary>
     public void ShowAndActivate()
     {
-        if (_inTray)
-        {
-            _inTray = false;
-            UpdateChrome();
-            Rebuild(keepScroll: false);
-        }
         AppWindow.Show();
         Maximize();
         Activate();
+        SetForegroundWindow(WinRT.Interop.WindowNative.GetWindowHandle(this));
     }
 
-    /// <summary>The window always opens maximised - at launch and back from the tray.</summary>
+    /// <summary>The window always opens maximised - at launch and when asked for again.</summary>
     public void OpenMaximized()
     {
         Maximize();
@@ -347,8 +321,8 @@ public sealed partial class MainWindow : Window
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.Children.Add(Ui.Text("Local only · no telemetry, no outbound requests", 13, 400, Palette.TextFaintBrush));
-        var right = Ui.Text($"© 2026 Naimul Nashid · v{typeof(MainWindow).Assembly.GetName().Version?.ToString(3)}", 13, 400, Palette.TextFaintBrush);
+        grid.Children.Add(Ui.Text("Local only · no telemetry, no outbound requests", 13, 400, Palette.PageFaintBrush));
+        var right = Ui.Text($"© 2026 Naimul Nashid · v{typeof(MainWindow).Assembly.GetName().Version?.ToString(3)}", 13, 400, Palette.PageFaintBrush);
         Grid.SetColumn(right, 1);
         grid.Children.Add(right);
         return new Border
@@ -452,7 +426,7 @@ public sealed partial class MainWindow : Window
         SpinSyncIcon(false);
         _syncText.Text = code == 0 ? "Synced" : "Sync failed";
         SyncInk(code == 0 ? Palette.TextMutedBrush : Palette.WarnBrush);
-        if (code != 0 && !_inTray) await Shell.ShowMessage(this, "Sync failed", last ?? "The collector reported a failure. See Sync Status.");
+        if (code != 0) await Shell.ShowMessage(this, "Sync failed", last ?? "The collector reported a failure. See Sync Status.");
         var timer = DispatcherQueue.CreateTimer();
         timer.Interval = TimeSpan.FromSeconds(4);
         timer.IsRepeating = false;
@@ -625,6 +599,7 @@ public sealed partial class MainWindow : Window
         {
             _settings.CloseToTray = tray.IsChecked;
             _settings.Save();
+            SettingsChanged?.Invoke();
         };
         flyout.Opening += (_, _) =>
         {
@@ -738,7 +713,6 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private async void Rebuild(bool keepScroll)
     {
-        if (_inTray) return;
         var token = ++_buildToken;
         var offset = _scroller.VerticalOffset;
         _topBar.Visibility = _state.DataDir is null ? Visibility.Collapsed : Visibility.Visible;

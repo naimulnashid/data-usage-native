@@ -81,9 +81,6 @@ public sealed class AppState : IDisposable
     /// <summary>Raised on the UI thread after a reload.</summary>
     public event Action? Changed;
 
-    /// <summary>Raised on the UI thread for a problem worth a notification: title, message.</summary>
-    public event Action<string, string>? Problem;
-
     public void OnUi(Action action) => _ui.TryEnqueue(() => action());
 
     /// <summary>(Re)reads where the data folder is, and watches its database.</summary>
@@ -106,8 +103,11 @@ public sealed class AppState : IDisposable
         {
             Directory.CreateDirectory(live);
             _watcher = new FileSystemWatcher(live, "data-usage.db*") { EnableRaisingEvents = true, NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName };
-            _watcher.Changed += (_, _) => Touch();
-            _watcher.Created += (_, _) => Touch();
+            // Not the -shm file: every reader of a WAL database writes it, this
+            // process's own reload included, so each reload scheduled the
+            // next - one every three seconds for as long as the window was up.
+            _watcher.Changed += (_, e) => { if (!TrayProcess.IsSharedMemory(e)) Touch(); };
+            _watcher.Created += (_, e) => { if (!TrayProcess.IsSharedMemory(e)) Touch(); };
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
@@ -181,7 +181,6 @@ public sealed class AppState : IDisposable
             Latest = result.Latest;
             Version++;
             Changed?.Invoke();
-            CheckHealth();
         }
         catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or IOException)
         {
@@ -241,34 +240,8 @@ public sealed class AppState : IDisposable
         return code;
     }
 
-    /// <summary>
-    /// One notification per failed run, and one per stall. The collector runs
-    /// hourly; three hours without a success is a laptop that slept - the task
-    /// catches up on waking - so a stall is called at six.
-    /// </summary>
-    private void CheckHealth()
-    {
-        if (!_settings.NotifyProblems || Sync is not { } sync) return;
-        var newest = sync.Runs.FirstOrDefault();
-        if (newest is { Status: "failed" } && newest.Id > _settings.NotifiedFailureId)
-        {
-            _settings.NotifiedFailureId = newest.Id;
-            _settings.Save();
-            Problem?.Invoke("Data Usage collection failed", Trim(newest.Error ?? "The collector reported a failure. Open Sync Status for details."));
-            return;
-        }
-        if (sync.HoursSinceSuccess is > 6 && sync.LastSuccess?.StartedAt is { } since && since != _settings.NotifiedStallSince)
-        {
-            _settings.NotifiedStallSince = since;
-            _settings.Save();
-            Problem?.Invoke("Data Usage has stopped collecting", $"No successful collection in {Math.Round(sync.HoursSinceSuccess.Value)} hours. Open Sync Status to check the scheduled task.");
-        }
-    }
-
-    /// <summary>Stalls can begin with no write at all, so health is also checked on a clock.</summary>
-    public void CheckHealthNow() => _ = ReloadAsync(onlyIfChanged: false);
-
-    private static string Trim(string s) => s.Length > 200 ? s[..197] + "..." : s;
+    // The problem notifications (a failed run, a stall) are the tray
+    // process's: see TrayProcess.CheckHealth.
 
     public void Dispose()
     {
