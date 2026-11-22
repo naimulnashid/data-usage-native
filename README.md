@@ -15,6 +15,8 @@ Built with WinUI 3 on .NET 10. A native port of the
 app, sharing its design and its rules but no code. Local only: no network
 calls, no server, no account.
 
+> **Status:** in active development, built for my own setup. Updates can change the database format, so back up the data folder before updating. It needs administrator approval once for its scheduled tasks, and a data folder off the Windows drive (by default `D:\PersistentData\data-usage-native`).
+
 ## Screenshots
 
 Every page, top to bottom, in the dark theme and the light one. **Every number
