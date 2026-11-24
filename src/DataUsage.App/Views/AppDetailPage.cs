@@ -33,13 +33,13 @@ public sealed class AppDetailPage(PageContext ctx, string key) : IPage
 
     public void Load()
     {
-        var q = ctx.State.Queries!;
+        var q = ctx.State.Current!;
         // An app the user merged into another is shown as that one.
         var shown = q.MergedInto(key) ?? key;
         _app = q.AppDetailFor(shown, Scope.All);
         _exists = _app is not null || q.AppExists(shown);
         // The same gate, and the same range, as the table's link.
-        _eligible = _app is not null && UsageQueries.EarnsDetailPage(_app.Totals.Total, _app.Days);
+        _eligible = _app is not null && q.Earns(_app.Totals.Total, _app.Days);
     }
 
     public void Placeholder()
@@ -75,6 +75,7 @@ public sealed class AppDetailPage(PageContext ctx, string key) : IPage
 
         var app = _app;
         var state = ctx.State;
+        var phone = state.Phone is not null;
         var color = Palette.App(state.Colors, app.Name);
         var mark = AppIconView.Create(app.Name, state.Colors, state.Icons, 30);
         // Rename, recolour and the logo; hiding and merging belong to By App.
@@ -109,7 +110,7 @@ public sealed class AppDetailPage(PageContext ctx, string key) : IPage
         page.Children.Add(Ui.Panel("Daily usage",
             peak is null ? "Nothing moved in this range" : $"Heaviest day {Format.DayShort(peak.Date)} · {Format.Bytes(peak.Total!.Value)}",
             range, DownUpBarChart.Daily(shownDays)));
-        page.Children.Add(OverviewPage.HourPanel(app.Hourly, "Local time, summed over all history"));
+        page.Children.Add(OverviewPage.HourPanel(app.Hourly, phone ? "Local time on the phone, in Android's two-hour buckets" : "Local time, summed over all history"));
 
         if (app.Networks.Count > 0)
         {
@@ -122,14 +123,16 @@ public sealed class AppDetailPage(PageContext ctx, string key) : IPage
                 bar.HorizontalAlignment = HorizontalAlignment.Stretch;
                 table.AddRow([DataTable.Cell(n.Label, numeric: false), DataTable.Cell(Format.Bytes(n.Bytes)), bar]);
             }
-            page.Children.Add(Ui.Panel("By network", "Which network this app used. Unnamed profiles fill in as the collector sees them again.", null, table.Build()));
+            page.Children.Add(Ui.Panel("By network",
+                phone ? "Wi-Fi against mobile data. Android does not give apps the name of the Wi-Fi network." : "Which network this app used. Unnamed profiles fill in as the collector sees them again.",
+                null, table.Build()));
         }
 
         if (app.Members.Count > 1)
         {
             var max = app.Members.Max(m => m.Bytes);
             var userMerged = app.Members.Any(m => m.MergedFrom is not null);
-            List<Column> columns = [new("Program"), new("Active days"), new("Total"), new($"Share of {app.Name}", Width: 280, Left: true)];
+            List<Column> columns = [new(phone ? "App" : "Program"), new("Active days"), new("Total"), new($"Share of {app.Name}", Width: 280, Left: true)];
             if (userMerged) columns.Add(new("", Width: 54));
             var table = new DataTable(columns) { RowPadding = 11 };
             foreach (var m in app.Members)
@@ -151,12 +154,21 @@ public sealed class AppDetailPage(PageContext ctx, string key) : IPage
                 table.AddRow(cells);
             }
             page.Children.Add(Ui.Panel("Merged apps",
-                $"{app.Members.Count} separate programs are counted together as {app.Name}. Their totals are added; nothing is double-counted.{(userMerged ? " Those you merged can be separated again." : "")}", null, table.Build()));
+                $"{app.Members.Count} separate {(phone ? "apps" : "programs")} are counted together as {app.Name}. Their totals are added; nothing is double-counted.{(userMerged ? " Those you merged can be separated again." : "")}", null, table.Build()));
         }
 
         // Only when there is more than one: that is the evidence for why
         // several raw strings are shown as one app. The web's rule.
-        if (app.Identities.Count > 1)
+        if (phone && app.Identities.Count > 1)
+        {
+            // Android counts traffic per uid, and several packages can share
+            // one, so their bytes cannot be split. The first names the uid.
+            var pkgs = new DataTable([new("Package"), new("Label", Left: true)]) { RowPadding = 10 };
+            foreach (var id in app.Identities) pkgs.AddRow([Parts.MonoCell(id.Identity, Palette.TextMutedBrush, 13), DataTable.Cell(id.Kind, Palette.TextMutedBrush, numeric: false)]);
+            page.Children.Add(Ui.Panel("Packages",
+                $"{app.Identities.Count} packages share this app's uid. Android counts the uid, not the package, so their traffic cannot be split; the app is named after the first.", null, pkgs.Build()));
+        }
+        else if (!phone && app.Identities.Count > 1)
         {
             var ids = new DataTable([new("SRUM identity"), new("Total")]) { RowPadding = 10 };
             foreach (var id in app.Identities) ids.AddRow([Parts.MonoCell(id.Identity, Palette.TextMutedBrush, 13), DataTable.Cell(Format.Bytes(id.Bytes))]);

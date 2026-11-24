@@ -17,9 +17,10 @@ using Windows.Graphics;
 namespace DataUsage.App;
 
 /// <summary>
-/// The shell: title bar, the top bar, and the page area. No sidebar: the web
-/// dashboard's sidebar chose between devices, and this app is about the one
-/// PC it is installed on.
+/// The shell: title bar, the device sidebar, the top bar, and the page area.
+/// The sidebar is the web dashboard's: one row per device, this PC and every
+/// phone that reports to it, each in its own accent. It appears once a phone
+/// has reported; a PC on its own has nothing to choose between.
 /// </summary>
 /// <remarks>
 /// The top bar is the web's: page tabs on the left; Sync now and the settings
@@ -44,6 +45,9 @@ public sealed partial class MainWindow : Window
     private readonly ContentControl _pageHost = new() { HorizontalContentAlignment = HorizontalAlignment.Stretch, IsTabStop = false };
     private Grid _frame = null!;
     private Border _topBar = null!;
+    private Border _sidebar = null!;
+    private Button _sidebarBurger = null!;
+    private readonly StackPanel _devices = new() { Spacing = 8 };
 
     private Route _route = new(PageKind.Overview);
     private IPage? _page;
@@ -216,12 +220,19 @@ public sealed partial class MainWindow : Window
         SetTitleBar(titleBar);
         titleBar.Loaded += async (_, _) => icon.Source = await ImageLoader.LoadAsync(Path.Combine(AppContext.BaseDirectory, "Assets", "app-icon.svg"), 16, titleBar.XamlRoot?.RasterizationScale ?? 1);
 
+        var shell = new Grid();
+        shell.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        shell.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        _sidebar = BuildSidebar();
+        shell.Children.Add(_sidebar);
         var main = new Grid();
         main.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         main.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        Grid.SetColumn(main, 1);
+        shell.Children.Add(main);
         // Everything below the title bar zooms, as a browser zooms the page and
         // not its own chrome. See Controls/ZoomBox.
-        _zoomBox = new ZoomBox(main) { Zoom = Zoom.Level };
+        _zoomBox = new ZoomBox(shell) { Zoom = Zoom.Level };
         Grid.SetRow(_zoomBox, 1);
         Root.Children.Add(_zoomBox);
         Root.Children.Add(ZoomIndicator());
@@ -316,12 +327,17 @@ public sealed partial class MainWindow : Window
         Root.KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden;
     }
 
-    private static Border Footer()
+    private Border Footer()
     {
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.Children.Add(Ui.Text("Local only · no telemetry, no outbound requests", 13, 400, Palette.PageFaintBrush));
+        // The phones' inbox is the one outbound connection, and only once one
+        // is set up: it carries their uploads, sealed so the inbox reads nothing.
+        var local = _state.Device.Inbox is { IsSet: true }
+            ? "Local only · no telemetry · the phones' inbox is end-to-end encrypted"
+            : "Local only · no telemetry, no outbound requests";
+        grid.Children.Add(Ui.Text(local, 13, 400, Palette.PageFaintBrush));
         var right = Ui.Text($"© 2026 Naimul Nashid · v{typeof(MainWindow).Assembly.GetName().Version?.ToString(3)}", 13, 400, Palette.PageFaintBrush);
         Grid.SetColumn(right, 1);
         grid.Children.Add(right);
@@ -333,6 +349,119 @@ public sealed partial class MainWindow : Window
             BorderThickness = new Thickness(0, 1, 0, 0),
             Child = grid,
         };
+    }
+
+    /* ------------------------------------------------------------ Sidebar */
+
+    private Border BuildSidebar()
+    {
+        var stack = new StackPanel { Padding = new Thickness(10, 14, 10, 10) };
+        var burger = new Button
+        {
+            Content = new FontIcon { Glyph = "\uE700", FontSize = 15, Foreground = Palette.TextMutedBrush },
+            Width = 34,
+            Height = 34,
+            Padding = new Thickness(0),
+            CornerRadius = new CornerRadius(Ui.RadiusSmall),
+            BorderThickness = new Thickness(1),
+            Background = Palette.TransparentBrush,
+            BorderBrush = Palette.TransparentBrush,
+            Margin = new Thickness(2, 0, 0, 18),
+        };
+        burger.Resources["ButtonBackgroundPointerOver"] = Palette.SurfaceHoverBrush;
+        burger.Resources["ButtonBorderBrushPointerOver"] = Palette.BorderBrightBrush;
+        burger.Click += (_, _) =>
+        {
+            _settings.SidebarCollapsed = !_settings.SidebarCollapsed;
+            _settings.Save();
+            UpdateSidebar();
+        };
+        stack.Children.Add(burger);
+        stack.Children.Add(_devices);
+        _sidebarBurger = burger;
+        return new Border
+        {
+            Background = Palette.SurfaceBrush,
+            BorderBrush = Palette.BorderBrush,
+            BorderThickness = new Thickness(0, 0, 1, 0),
+            Child = stack,
+            Visibility = Visibility.Collapsed,
+        };
+    }
+
+    /// <summary>
+    /// One row per device. The active row takes ITS OWN device's accent, not
+    /// the page's, so which machine a click switches to is legible before
+    /// the click - the web sidebar's rule.
+    /// </summary>
+    private void UpdateSidebar()
+    {
+        var phones = _state.Phones;
+        _sidebar.Visibility = phones.Count > 0 && _state.DataDir is not null ? Visibility.Visible : Visibility.Collapsed;
+        var collapsed = _settings.SidebarCollapsed;
+        _sidebar.Width = collapsed ? 62 : 232;
+        ToolTipService.SetToolTip(_sidebarBurger, collapsed ? "Expand sidebar" : "Collapse sidebar");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_sidebarBurger, collapsed ? "Expand sidebar" : "Collapse sidebar");
+        _sidebarBurger.HorizontalAlignment = collapsed ? HorizontalAlignment.Center : HorizontalAlignment.Left;
+        _devices.Children.Clear();
+        _devices.Children.Add(DeviceRow(null, _state.Device.Label, "Windows", "\uE7F8"));
+        foreach (var p in phones) _devices.Children.Add(DeviceRow(p.Id, p.Label, "Android", "\uE8EA"));
+    }
+
+    private Button DeviceRow(string? phoneId, string label, string platform, string glyph)
+    {
+        var active = phoneId == _state.Phone?.Id;
+        var (accent, bright) = Palette.AccentOf(phoneId is not null);
+        var collapsed = _settings.SidebarCollapsed;
+        Brush ink = active ? new SolidColorBrush(bright) : Palette.TextMutedBrush;
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 11 };
+        row.Children.Add(new FontIcon { Glyph = glyph, FontSize = 19, Foreground = ink, VerticalAlignment = VerticalAlignment.Center });
+        if (!collapsed)
+        {
+            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            var name = Ui.Text(label, 14.4, 600, ink, -0.01, selectable: false);
+            name.TextTrimming = TextTrimming.CharacterEllipsis;
+            name.MaxWidth = 160;
+            text.Children.Add(name);
+            text.Children.Add(Ui.Text(platform, 12, 400, active ? new SolidColorBrush(bright) : Palette.TextFaintBrush, selectable: false));
+            row.Children.Add(text);
+        }
+        var button = new Button
+        {
+            Content = row,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = collapsed ? HorizontalAlignment.Center : HorizontalAlignment.Left,
+            Padding = collapsed ? new Thickness(0, 9, 0, 9) : new Thickness(10, 9, 10, 9),
+            CornerRadius = new CornerRadius(Ui.RadiusSmall),
+            BorderThickness = new Thickness(1),
+            Background = active ? new SolidColorBrush(Palette.WithAlpha(accent, Palette.IsLight ? 0.10 : 0.16)) : Palette.TransparentBrush,
+            BorderBrush = active ? new SolidColorBrush(Palette.WithAlpha(accent, Palette.IsLight ? 0.24 : 0.28)) : Palette.TransparentBrush,
+        };
+        if (!active) button.Resources["ButtonBackgroundPointerOver"] = Palette.SurfaceHoverBrush;
+        Ui.SetTip(button, $"{label} - {platform}");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, $"{label}, {platform}");
+        button.Click += async (_, _) => await ShowDeviceAsync(phoneId);
+        return button;
+    }
+
+    /// <summary>Switch to a device: its accent, its overview, its colours and logos.</summary>
+    private async Task ShowDeviceAsync(string? phoneId)
+    {
+        if (phoneId == _state.Phone?.Id)
+        {
+            Navigate(new Route(PageKind.Overview));
+            return;
+        }
+        Palette.SetPhone(phoneId is not null);
+        _route = new Route(PageKind.Overview);
+        _page = null;
+        _scroller.ChangeView(null, 0, null, disableAnimation: true);
+        // The reload that follows raises Changed, which rebuilds the page with
+        // the new device's colours; until then its skeleton shows.
+        var select = _state.SelectAsync(phoneId);
+        _pageHost.Content = SkeletonFor(_route);
+        UpdateChrome();
+        await select;
     }
 
     /* ------------------------------------------------------------ Top bar */
@@ -702,7 +831,7 @@ public sealed partial class MainWindow : Window
         PageKind.Apps => new AppsPage(_ctx),
         PageKind.App => new AppDetailPage(_ctx, route.AppKey ?? ""),
         PageKind.Activity => new ActivityPage(_ctx),
-        PageKind.Sync => new SyncPage(_ctx),
+        PageKind.Sync => _state.Phone is null ? new SyncPage(_ctx) : new PhoneSyncPage(_ctx),
         _ => new OverviewPage(_ctx),
     };
 
@@ -780,7 +909,8 @@ public sealed partial class MainWindow : Window
 
     private void UpdateChrome()
     {
-        Title = $"{_state.Device.Label} · Data Usage";
+        Title = $"{_state.DeviceLabel} · Data Usage";
+        UpdateSidebar();
         foreach (var (kind, tab) in _tabs)
         {
             var active = kind == _route.Kind || (kind == PageKind.Apps && _route.Kind == PageKind.App) || (kind == PageKind.Overview && _route.Kind == PageKind.Activity);
@@ -802,6 +932,13 @@ public sealed partial class MainWindow : Window
     private void ApplyDebugView()
     {
         if (_debugApplied || Environment.GetEnvironmentVariable("DATAUSAGE_DEBUG_VIEW") is not { Length: > 0 } spec) return;
+        // DATAUSAGE_DEBUG_PHONE=<slug> opens that phone first.
+        if (Environment.GetEnvironmentVariable("DATAUSAGE_DEBUG_PHONE") is { Length: > 0 } slug && _state.Phone is null
+            && _state.Phones.FirstOrDefault(p => p.Slug == slug) is { } wanted)
+        {
+            _ = ShowDeviceAsync(wanted.Id);
+            return;
+        }
         var parts = spec.Split(',');
         var kind = Enum.TryParse<PageKind>(parts[0], true, out var k) ? k : PageKind.Overview;
         var key = kind == PageKind.App && parts.Length > 2 ? parts[1] : null;

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using DataUsage.Core;
+using DataUsage.Core.Android;
 using DataUsage.Core.Collect;
 using DataUsage.Core.Data;
 using DataUsage.Core.Naming;
@@ -31,6 +32,9 @@ public static class Program
                 "read-srum" => ReadSrum(rest),
                 "stats" => Stats(rest),
                 "import-web" => ImportWeb(rest),
+                "import-android" => ImportAndroid(rest),
+                "phones" => Phones(rest),
+                "inbox" => InboxCommand(rest),
                 "ingest" => Ingest(rest),
                 "demo-data" => DemoCommand.Run(rest),
                 "where" => Where(),
@@ -58,6 +62,14 @@ public static class Program
                 Totals and the top apps, for comparing with Windows' Data usage page.
             datausage import-web --db <web backup .db> [--config <collector.json>] [--logos <dir>]
                 One-time copy of the web dashboard's history, settings and logos.
+            datausage import-android --db <web backup .db> [--logos <web publicpps_logo dir>]
+                One-time copy of the web dashboard's phone history, and each phone's logo folder.
+            datausage phones [--days N]
+                Each phone's totals, for comparing with the web dashboard.
+            datausage inbox --url <https://...> --key <inbox-key.pem> [--tokens <json>]
+                Point this PC at the phones' cloud inbox (tokens default to inbox-tokens.json beside the key).
+            datausage inbox --drain [--dry-run] [--retry-failed]
+                Empty the inbox now, as each collector run does.
             datausage names
                 Raw identities -> members -> families, and any duplicate display names.
             datausage demo-data <dir>
@@ -213,6 +225,77 @@ public static class Program
 
         UsageDb.Checkpoint(db);
         Console.WriteLine($"backup     : {UsageDb.Backup(db, AppPaths.BackupPath(dir))}");
+        return 0;
+    }
+
+    private static int ImportAndroid(string[] args)
+    {
+        var source = Arg(args, "db") ?? throw new ArgumentException("--db <web backup .db> is required");
+        var dir = RequireDataDir();
+        using var db = UsageDb.Open(AppPaths.DatabasePath(dir), AppPaths.ReadLocation().AllowSystemDrive || Flag(args, "allow-system-drive"));
+        var sw = Stopwatch.StartNew();
+        var r = PhoneImport.Run(db, source);
+        Console.WriteLine($"phones     : {r.Devices}, apps {r.Apps}, uploads {r.Uploads} new, prefs {r.Prefs}");
+        Console.WriteLine($"buckets    : {r.Rows} in source, {r.RowsTouched} written or grown here ({sw.ElapsedMilliseconds} ms)");
+        var mismatch = false;
+        foreach (var (id, label, src, here) in r.Totals)
+        {
+            Console.WriteLine($"  {label,-24} source {src,16:N0}  here {here,16:N0}  {(src == here ? "match" : "DIFFERENT")}");
+            mismatch |= src != here;
+        }
+        if (Arg(args, "logos") is { } logos)
+            foreach (var phone in PhoneQueries.Devices(AppPaths.DatabasePath(dir)))
+                Console.WriteLine($"logos      : {phone.Slug}: {WebImport.CopyLogos(Path.Combine(logos, phone.Slug), AppPaths.PhoneLogosDir(dir, phone.Slug))} copied");
+        UsageDb.Checkpoint(db);
+        Console.WriteLine($"backup     : {UsageDb.Backup(db, AppPaths.BackupPath(dir))}");
+        return mismatch ? 1 : 0;
+    }
+
+    private static int Phones(string[] args)
+    {
+        var dir = RequireDataDir();
+        var path = AppPaths.DatabasePath(dir);
+        var days = int.TryParse(Arg(args, "days"), out var d) ? d : Scope.AllDays;
+        foreach (var phone in PhoneQueries.Devices(path))
+        {
+            var q = new PhoneQueries(path, phone.Id);
+            var o = q.Overview(new Scope(days));
+            var x = q.Extras(new Scope(days));
+            var apps = q.ByApp(new Scope(days));
+            var sync = q.Sync(1);
+            Console.WriteLine($"{phone.Label} [{phone.Slug}] Android {phone.Release} (API {phone.Sdk})");
+            Console.WriteLine($"  all {Format.Bytes(o.All.Total)} ({o.All.Total:N0} B)  30d {Format.Bytes(o.Month.Total)}  7d {Format.Bytes(o.Week.Total)}  latest {o.LatestDate} {Format.Bytes(o.Today.Total)}");
+            Console.WriteLine($"  wifi {Format.Bytes(x.Wifi)}  mobile {Format.Bytes(x.Mobile)}  tethering {Format.Bytes(x.Tethering)} (excluded)  {apps.Apps.Count} apps, {apps.Apps.Count(a => a.Detailed)} with pages");
+            foreach (var a in apps.Apps.Take(5)) Console.WriteLine($"    {a.Name,-32} {Format.Bytes(a.Total),10} {a.Days,4}d");
+            Console.WriteLine($"  uploads {sync.TotalUploads}, last success {sync.LastSuccessAt ?? "never"}, runway {(sync.RunwayDays is { } rw ? Math.Round(rw) + " days" : "-")}");
+        }
+        return 0;
+    }
+
+    private static int InboxCommand(string[] args)
+    {
+        var dir = RequireDataDir();
+        var settings = DeviceSettings.Load(dir);
+        if (Flag(args, "drain"))
+        {
+            if (settings.Inbox is not { IsSet: true } inbox) throw new InvalidOperationException("no inbox is set; run datausage inbox --url ... --key ... first");
+            using var db = UsageDb.Open(AppPaths.DatabasePath(dir), AppPaths.ReadLocation().AllowSystemDrive);
+            var r = Inbox.DrainAsync(db, inbox, Console.WriteLine, retryFailed: Flag(args, "retry-failed"), dryRun: Flag(args, "dry-run")).GetAwaiter().GetResult();
+            Console.WriteLine($"landed {r.Landed}, rejected {r.Failed}, {r.RowsWritten} new rows");
+            return r.Failed > 0 ? 1 : 0;
+        }
+        var url = Arg(args, "url") ?? throw new ArgumentException("--url <https://...> is required");
+        var key = Arg(args, "key") ?? throw new ArgumentException("--key <inbox-key.pem> is required");
+        if (!url.StartsWith("https://", StringComparison.Ordinal)) throw new ArgumentException("the inbox address must be https://");
+        var next = new InboxSettings { Url = url.TrimEnd('/'), KeyPath = Path.GetFullPath(key), TokensPath = Arg(args, "tokens") is { } t ? Path.GetFullPath(t) : null };
+        // Checked before saving: a key or tokens file that does not load would
+        // only show up later, as a warning in every collector log.
+        using (var k = Inbox.LoadKey(next.KeyPath)) Console.WriteLine($"key        : {Inbox.Fingerprint(Inbox.PublicKeyB64(k))}");
+        Inbox.LoadTokens(next);
+        Console.WriteLine($"tokens     : {next.ResolvedTokensPath}");
+        settings.Inbox = next;
+        settings.Save(dir);
+        Console.WriteLine($"inbox      : {next.Url} (emptied on every collector run)");
         return 0;
     }
 

@@ -131,17 +131,19 @@ public static class AppActions
 
     private static (RenameError, string?) Rename(PageContext ctx, string key, string requested, string baseName)
     {
-        var current = ctx.State.Queries!.AppNamesByKey();
+        var q = ctx.State.Current!;
+        var current = q.AppNamesByKey();
         using var db = OpenForWrite(ctx);
-        return Renames.Save(db, key, requested, current, baseName);
+        return Renames.Save(db, key, requested, current, baseName, q.PrefsDevice);
     }
 
     /// <summary>Stores a colour, or clears it with an empty string.</summary>
     private static (ColorError, string?) Recolor(PageContext ctx, string key, string requested)
     {
-        var known = ctx.State.Queries!.AppNamesByKey().Keys.ToHashSet();
+        var q = ctx.State.Current!;
+        var known = q.AppNamesByKey().Keys.ToHashSet();
         using var db = OpenForWrite(ctx);
-        return ColorOverrides.Save(db, key, requested, known);
+        return ColorOverrides.Save(db, key, requested, known, q.PrefsDevice);
     }
 
     private static Microsoft.Data.Sqlite.SqliteConnection OpenForWrite(PageContext ctx)
@@ -249,7 +251,7 @@ public static class AppActions
                 await Task.Run(() =>
                 {
                     using var db = OpenForWrite(ctx);
-                    AppPrefs.SetHidden(db, key, !hidden);
+                    AppPrefs.SetHidden(db, key, !hidden, ctx.State.Current!.PrefsDevice);
                 });
                 await ctx.State.ReloadAsync();
             };
@@ -301,9 +303,10 @@ public static class AppActions
     /// <summary>Merges, or separates again with <paramref name="into"/> null.</summary>
     private static MergeError Merge(PageContext ctx, string key, string? into)
     {
-        var known = ctx.State.Queries!.AppKeys();
+        var q = ctx.State.Current!;
+        var known = q.AppKeys();
         using var db = OpenForWrite(ctx);
-        return AppPrefs.SetMerge(db, key, into, known);
+        return AppPrefs.SetMerge(db, key, into, known, q.PrefsDevice);
     }
 
     /// <summary>Separate: undo a merge, from the target's Merged apps card.</summary>

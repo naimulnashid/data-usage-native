@@ -17,7 +17,8 @@ public sealed record ImportResult(long Rows, long RowsNew, long Runs, long Obser
 /// this twice, or after the native collector has run, inserts no duplicates.</para>
 /// <para>What comes across: usage rows, the run log (its SRUM windows are what
 /// mark a quiet day as known rather than uncollected), network observations
-/// and learned names, and the laptop's renames. Nothing Android.</para>
+/// and learned names, and the laptop's renames. The phones come with
+/// <see cref="PhoneImport"/>.</para>
 /// </remarks>
 public static class WebImport
 {

@@ -21,6 +21,12 @@ public sealed class DeviceSettings
     /// </summary>
     public string? SplitApp { get; set; }
 
+    /// <summary>
+    /// The phones' cloud inbox, emptied on every collector run; null when no
+    /// phone reports to this PC. See <see cref="Android.Inbox"/>.
+    /// </summary>
+    public Android.InboxSettings? Inbox { get; set; }
+
     public string Label => string.IsNullOrWhiteSpace(DeviceLabel) ? Environment.MachineName : DeviceLabel.Trim();
 
     public string? Split => string.IsNullOrWhiteSpace(SplitApp) ? null : SplitApp.Trim();

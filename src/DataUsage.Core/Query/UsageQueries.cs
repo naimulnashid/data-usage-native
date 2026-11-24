@@ -19,11 +19,15 @@ namespace DataUsage.Core.Query;
 /// double-counts. If a page ever shows roughly twice what Windows reports,
 /// this is the first place to look.
 /// </remarks>
-public sealed partial class UsageQueries(string databasePath, string? splitApp = null)
+public sealed partial class UsageQueries(string databasePath, string? splitApp = null) : IDeviceQueries
 {
     public string DatabasePath { get; } = databasePath;
 
     public bool DatabaseExists => File.Exists(DatabasePath);
+
+    public string PrefsDevice => Renames.Device;
+
+    public bool Earns(long totalBytes, int activeDays) => EarnsDetailPage(totalBytes, activeDays);
 
     private T With<T>(Func<SqliteConnection, T> fn)
     {
@@ -503,7 +507,7 @@ public sealed partial class UsageQueries(string databasePath, string? splitApp =
     });
 
     /// <summary>Family group key to the colour the user chose for it.</summary>
-    public Dictionary<string, string> ColorOverrideMap() => With(ColorOverrides.Read);
+    public Dictionary<string, string> ColorOverrideMap() => With(db => ColorOverrides.Read(db));
 
     /// <summary>Every family ever seen: as shown, and as it would be without a rename.</summary>
     public Dictionary<string, (string Name, string Base)> AppNamesByKey() => With(db =>

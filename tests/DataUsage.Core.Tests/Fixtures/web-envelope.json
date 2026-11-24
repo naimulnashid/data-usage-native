@@ -1,0 +1,9 @@
+{
+  "note": "Made by the web dashboard's sealEnvelope with a throwaway key and token. Synthetic data. The key is PKCS#8 DER in base64, a test key and nothing else.",
+  "keyPkcs8": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgZcEWcJECJICXbolu2NCbMHbxVJnMSmcZaUvKAusIIF6hRANCAASHlgkyFN4wcbPe0bQit48wMQgs4bx0A1w2ZVTmoGnQ81onBCJARHTWOgpnu+UzD/+Toxq/G7KpKvHO2DO5bC+5",
+  "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEh5YJMhTeMHGz3tG0IrePMDEILOG8dANcNmVU5qBp0PNaJwQiQER01joKZ7vlMw//k6MavxuyqSrxztgzuWwvuQ==",
+  "fingerprint": "F8C6 6E9F 274C 58CC",
+  "token": "fixture-ingest-token-not-a-real-one",
+  "bearer": "78529550b4493d1b51a22ad7c35531680416b65a39182c3a8225c39b02ca9fa8",
+  "envelope": "RFVJMQRnPMi/4WylkrT1tHcNF9TLog2kwq5Fue3hPAbOfU9Z0vKHXWj6o85vgdv1z3Hr3+ILoe/D2wEiCTAO8fdTBscnLQax9IctutOBTtZX6B9yIlfg5PjTetH42It/g8qp5iRV/WglKIH2wrGZmMwUhWDO4Q3Z6mB2MSBiDf8PH4UAQtPEByPpLmomnDRZ46QyKnvhk0294nrTPC9kL+QdK3wBtOTNOjozYdQK+EUiDBaNSxNdc7eZFz9So8/UMN9qcGTWYyGqF+OxcOkX7zdV/9ll1dl25OgS38V/i+L7SBDSQwcHe4tH/ldyWt7p9tp/Mc6aHDK5nLuN0+qFtJyV/k8NAHIZkwNU3o6eeqA2o5Luc4WQ6erDg9VLP1nIE2DsjJ8TYyfrJkNKa5QCARgx2Cs4p1lLbSQlkexpuA1QHJHHeWftgJdcFUHcYgXsHKwkDCW+V1JpWPOTy4d1cKeQ1BIXcaYmV4xtIND9FYKK6eIU02cmH0ShtuyVomMCwg=="
+}

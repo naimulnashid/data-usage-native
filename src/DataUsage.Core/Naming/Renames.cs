@@ -26,7 +26,10 @@ public enum RenameError
 /// </remarks>
 public static partial class Renames
 {
-    /// <summary>The web dashboard's key for the laptop; kept so its renames import as they are.</summary>
+    /// <summary>
+    /// The web dashboard's key for the laptop; kept so its renames import as
+    /// they are. A phone's rows are keyed by its device id and the uid as text.
+    /// </summary>
     public const string Device = "windows";
 
     public const int MaxLength = 60;
@@ -40,14 +43,14 @@ public static partial class Renames
     private static partial Regex Whitespace();
 
     /// <summary>group key to chosen name. Empty when there are none, or no table yet.</summary>
-    public static Dictionary<string, string> Read(SqliteConnection db)
+    public static Dictionary<string, string> Read(SqliteConnection db, string device = Device)
     {
         var map = new Dictionary<string, string>();
         try
         {
             using var cmd = db.CreateCommand();
             cmd.CommandText = "SELECT app_key, name FROM app_renames WHERE device = $d";
-            cmd.Parameters.AddWithValue("$d", Device);
+            cmd.Parameters.AddWithValue("$d", device);
             using var r = cmd.ExecuteReader();
             while (r.Read()) map[r.GetString(0)] = r.GetString(1);
         }
@@ -78,7 +81,7 @@ public static partial class Renames
     /// any rename and refusing would make the rename impossible to undo.
     /// </remarks>
     public static (RenameError Error, string? Name) Save(SqliteConnection db, string key, string? requested,
-        IReadOnlyDictionary<string, (string Name, string Base)> current, string baseName)
+        IReadOnlyDictionary<string, (string Name, string Base)> current, string baseName, string device = Device)
     {
         if (!current.ContainsKey(key)) return (RenameError.UnknownApp, null);
         var reset = requested is not null && requested.Trim().Length == 0;
@@ -95,12 +98,12 @@ public static partial class Renames
         }
 
         if (name == baseName)
-            UsageDb.Exec(db, "DELETE FROM app_renames WHERE device = $d AND app_key = $k", ("$d", Device), ("$k", key));
+            UsageDb.Exec(db, "DELETE FROM app_renames WHERE device = $d AND app_key = $k", ("$d", device), ("$k", key));
         else
             UsageDb.Exec(db, """
                 INSERT INTO app_renames (device, app_key, name, updated_at) VALUES ($d, $k, $n, $t)
                 ON CONFLICT (device, app_key) DO UPDATE SET name = excluded.name, updated_at = excluded.updated_at
-                """, ("$d", Device), ("$k", key), ("$n", name), ("$t", UsageDb.NowIso()));
+                """, ("$d", device), ("$k", key), ("$n", name), ("$t", UsageDb.NowIso()));
         return (RenameError.None, name);
     }
 

@@ -16,6 +16,9 @@ public sealed class UiSettings
     /// </summary>
     public string AppsView { get; set; } = "table";
 
+    /// <summary>The device sidebar folded to its icon rail.</summary>
+    public bool SidebarCollapsed { get; set; }
+
     /// <summary>Re-read the database when a collector run lands in it.</summary>
     public bool AutoRefresh { get; set; } = true;
 

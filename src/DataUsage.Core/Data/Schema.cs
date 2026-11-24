@@ -2,12 +2,13 @@ namespace DataUsage.Core.Data;
 
 /// <summary>
 /// The database schema. <c>usage_records</c>, <c>sync_log</c>, the two network
-/// tables and <c>app_renames</c> have exactly the web dashboard's columns, so
-/// its history imports row for row and the dedup key recognises its rows.
+/// tables, <c>app_renames</c> and the phones' <c>android_*</c> tables (version
+/// 4) have exactly the web dashboard's columns, so its history imports row for
+/// row and the dedup keys recognise its rows.
 /// </summary>
 public static class Schema
 {
-    public const int Version = 3;
+    public const int Version = 4;
 
     public const string Sql = """
         PRAGMA journal_mode = WAL;
@@ -146,6 +147,101 @@ public static class Schema
           into_key   TEXT NOT NULL,
           updated_at TEXT NOT NULL,
           PRIMARY KEY (device, app_key)
+        );
+        -- ===================== PHONES (version 4) =====================
+        -- Separate tables, never UNION-ed with usage_records: the actor is a
+        -- Linux uid, not an exe; buckets are 2 hours; the network axis is
+        -- wifi/mobile; and a row is a RUNNING TOTAL for its bucket, not an
+        -- immutable delta. See Android/PhoneIngest.cs.
+
+        -- device_id is a random UUID the phone app made, not a hardware id.
+        CREATE TABLE IF NOT EXISTS android_devices (
+          device_id       TEXT PRIMARY KEY,
+          label           TEXT    NOT NULL DEFAULT '',
+          brand           TEXT    NOT NULL DEFAULT '',
+          model           TEXT    NOT NULL DEFAULT '',
+          android_release TEXT    NOT NULL DEFAULT '',
+          sdk             INTEGER NOT NULL DEFAULT 0,
+          first_seen      TEXT    NOT NULL,
+          last_seen       TEXT    NOT NULL
+        );
+
+        -- uid -> package, as the PHONE reports it: only its PackageManager
+        -- knows the labels and which packages share a uid. user_profile is
+        -- uid / 100000, so a cloned app (profile 999) stays apart.
+        CREATE TABLE IF NOT EXISTS android_apps (
+          device_id    TEXT    NOT NULL,
+          uid          INTEGER NOT NULL,
+          package      TEXT    NOT NULL,
+          label        TEXT    NOT NULL DEFAULT '',
+          is_system    INTEGER NOT NULL DEFAULT 0,
+          user_profile INTEGER NOT NULL DEFAULT 0,
+          first_seen   TEXT    NOT NULL,
+          last_seen    TEXT    NOT NULL,
+          PRIMARY KEY (device_id, uid, package)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_android_apps_uid ON android_apps(device_id, uid);
+
+        -- No byte values in the key, the opposite of usage_records: a bucket
+        -- read mid-window is partial and read again later is larger, so the
+        -- ingest upserts with MAX() instead of storing both.
+        CREATE TABLE IF NOT EXISTS android_usage_records (
+          device_id        TEXT    NOT NULL,
+          uid              INTEGER NOT NULL,
+          bucket_start_utc TEXT    NOT NULL,
+          local_date       TEXT    NOT NULL,
+          local_hour       INTEGER NOT NULL,
+          network          TEXT    NOT NULL,   -- wifi | mobile
+          metered          INTEGER NOT NULL DEFAULT 0,
+          roaming          INTEGER NOT NULL DEFAULT 0,
+          rx_bytes         INTEGER NOT NULL,
+          tx_bytes         INTEGER NOT NULL,
+          ingested_at      TEXT    NOT NULL,
+          PRIMARY KEY (device_id, uid, bucket_start_utc, network, metered, roaming)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_android_usage_date_cover
+          ON android_usage_records(device_id, local_date, uid, network, local_hour, rx_bytes, tx_bytes);
+        CREATE INDEX IF NOT EXISTS idx_android_usage_uid_cover
+          ON android_usage_records(device_id, uid, local_date, network, local_hour, rx_bytes, tx_bytes);
+
+        -- One row per upload. received_at is when the PHONE sent it; landed_at
+        -- when it reached this database, for one drained from the cloud inbox
+        -- (NULL for a direct upload, which only the web dashboard took).
+        CREATE TABLE IF NOT EXISTS android_sync_log (
+          id            INTEGER PRIMARY KEY AUTOINCREMENT,
+          device_id     TEXT    NOT NULL,
+          received_at   TEXT    NOT NULL,
+          status        TEXT    NOT NULL,   -- success | rejected
+          buckets_sent  INTEGER NOT NULL DEFAULT 0,
+          rows_written  INTEGER NOT NULL DEFAULT 0,
+          rows_updated  INTEGER NOT NULL DEFAULT 0,
+          apps_sent     INTEGER NOT NULL DEFAULT 0,
+          oldest_bucket TEXT,
+          newest_bucket TEXT,
+          app_version   TEXT,
+          error         TEXT,
+          landed_at     TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_android_sync_received ON android_sync_log(received_at DESC);
+
+        -- Per-app traffic per Wi-Fi network, captured over USB by the web
+        -- project's script. Imported so the history is whole; nothing here
+        -- shows it (the web dashboard hides it too).
+        CREATE TABLE IF NOT EXISTS android_ssid_usage (
+          device_id        TEXT    NOT NULL,
+          uid              INTEGER NOT NULL,
+          bucket_start_utc TEXT    NOT NULL,
+          local_date       TEXT    NOT NULL,
+          local_hour       INTEGER NOT NULL,
+          ssid             TEXT    NOT NULL,
+          metered          INTEGER NOT NULL DEFAULT 0,
+          rx_bytes         INTEGER NOT NULL,
+          tx_bytes         INTEGER NOT NULL,
+          ingested_at      TEXT    NOT NULL,
+          PRIMARY KEY (device_id, uid, bucket_start_utc, ssid, metered)
         );
         """;
 }

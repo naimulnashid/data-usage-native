@@ -116,13 +116,21 @@ public static class Days
     /// Every hour of the day in order, the hours that moved nothing as zero.
     /// Hour of day is a category axis too: an hour without rows used to vanish
     /// and its neighbours closed up, so 05 sat beside 08.
+    /// <para>A phone's buckets are two hours long, so with <paramref name="step"/>
+    /// 2 only the hours its buckets start on are filled - else every other bar
+    /// is a false zero - unless its rows mix odd and even hours (an offset
+    /// change mid-range), when all 24 are, so no row is dropped.</para>
     /// </summary>
-    public static List<HourPoint> FillHours(IEnumerable<HourPoint> rows)
+    public static List<HourPoint> FillHours(IEnumerable<HourPoint> rows, int step = 1)
     {
         var list = rows.ToList();
         if (list.Count == 0) return [];
+        var stride = step == 2 && list.Select(r => r.Hour % 2).Distinct().Count() == 1 ? 2 : 1;
+        var start = stride == 2 ? list[0].Hour % 2 : 0;
         var byHour = list.ToDictionary(r => r.Hour);
-        return Enumerable.Range(0, 24).Select(h => byHour.TryGetValue(h, out var r) ? r : new HourPoint(h, 0, 0)).ToList();
+        var result = new List<HourPoint>();
+        for (var h = start; h < 24; h += stride) result.Add(byHour.TryGetValue(h, out var r) ? r : new HourPoint(h, 0, 0));
+        return result;
     }
 
     /// <summary>"87 days, 84 with traffic". Unknown days are counted in neither.</summary>

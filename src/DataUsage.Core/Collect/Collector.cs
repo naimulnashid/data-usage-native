@@ -111,6 +111,11 @@ public static class Collector
 
             if (options.ObserveOnly) return 0;
 
+            // 2. The phones' cloud inbox, every run, so an upload lands within
+            //    15 minutes. Its own failure is a warning: it must never cost
+            //    the PC its SRUM read.
+            DrainPhones(db, dataDir, log);
+
             if (!options.Force && LastSuccessAge(db) is { } age && age < SrumInterval)
             {
                 log.Write($"SRUM read {Math.Round(age.TotalMinutes)} min ago; next read is due in {Math.Round((SrumInterval - age).TotalMinutes)} min", "INFO");
@@ -133,6 +138,24 @@ public static class Collector
                 log.Write("=== run FAILED ===", "ERROR");
                 return 1;
             }
+        }
+    }
+
+    private static void DrainPhones(Microsoft.Data.Sqlite.SqliteConnection db, string dataDir, RunLog log)
+    {
+        var inbox = DeviceSettings.Load(dataDir).Inbox;
+        if (inbox is not { IsSet: true }) return;
+        try
+        {
+            var r = Android.Inbox.DrainAsync(db, inbox, line => log.Write("inbox " + line, "INFO")).GetAwaiter().GetResult();
+            if (r.Landed > 0 || r.Failed > 0)
+                log.Write($"inbox: {r.Landed} phone upload{(r.Landed == 1 ? "" : "s")} landed ({r.RowsWritten} new rows), {r.Failed} rejected", r.Failed > 0 ? "WARN" : "OK");
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException
+                                      or IOException or UnauthorizedAccessException or System.Security.Cryptography.CryptographicException
+                                      or Microsoft.Data.Sqlite.SqliteException)
+        {
+            log.Write("inbox: " + ex.Message, "WARN");
         }
     }
 

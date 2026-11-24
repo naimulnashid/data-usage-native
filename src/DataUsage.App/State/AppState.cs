@@ -40,7 +40,51 @@ public sealed class AppState : IDisposable
 
     public DeviceSettings Device { get; private set; } = new();
 
+    /// <summary>This PC's queries, whichever device is showing. The tray, the collector and Sync Status read these.</summary>
     public UsageQueries? Queries { get; private set; }
+
+    /// <summary>Every phone that has reported, largest first, as of the last reload.</summary>
+    public IReadOnlyList<PhoneDevice> Phones { get; private set; } = [];
+
+    /// <summary>The phone being shown; null for this PC.</summary>
+    public PhoneDevice? Phone { get; private set; }
+
+    /// <summary>The phone's own queries when one is shown.</summary>
+    public PhoneQueries? PhoneQueries { get; private set; }
+
+    /// <summary>What the shared pages read: the phone's queries, or this PC's.</summary>
+    public IDeviceQueries? Current => (IDeviceQueries?)PhoneQueries ?? Queries;
+
+    /// <summary>The name on the page head and the sidebar's active row.</summary>
+    public string DeviceLabel => Phone?.Label ?? Device.Label;
+
+    /// <summary>
+    /// Show a phone, or this PC with null. Its colours, logos and names are
+    /// read afresh: each device has its own, and an alias that is right on
+    /// the PC (Settings is Windows) is wrong on a phone.
+    /// </summary>
+    public async Task SelectAsync(string? phoneId)
+    {
+        if (phoneId == Phone?.Id) return;
+        Phone = phoneId is null ? null : Phones.FirstOrDefault(p => p.Id == phoneId);
+        SetDeviceQueries();
+        await ReloadAsync();
+    }
+
+    private void SetDeviceQueries()
+    {
+        if (Phone is { } phone && DataDir is { } dir)
+        {
+            PhoneQueries = new PhoneQueries(AppPaths.DatabasePath(dir), phone.Id);
+            Logos.SetFolder(AppPaths.PhoneLogosDir(dir, phone.Slug));
+        }
+        else
+        {
+            Phone = null;
+            PhoneQueries = null;
+            if (DataDir is { } d) Logos.SetFolder(AppPaths.LogosDir(d));
+        }
+    }
 
     /// <summary>
     /// By App's list as a table or a grid, remembered with the app's other
@@ -73,6 +117,9 @@ public sealed class AppState : IDisposable
 
     public (string? Date, Totals Totals) Latest { get; private set; }
 
+    /// <summary>Hours since the shown phone's last successful upload, as of the last reload.</summary>
+    public double? PhoneHoursSinceSuccess { get; private set; }
+
     /// <summary>Bumped whenever something a page shows may have changed.</summary>
     public int Version { get; private set; }
 
@@ -96,7 +143,9 @@ public sealed class AppState : IDisposable
         }
         Device = DeviceSettings.Load(DataDir);
         Queries = new UsageQueries(AppPaths.DatabasePath(DataDir), Device.Split);
-        Logos.SetFolder(AppPaths.LogosDir(DataDir));
+        Phones = PhoneQueries.Devices(AppPaths.DatabasePath(DataDir));
+        if (Phone is { } shown) Phone = Phones.FirstOrDefault(p => p.Id == shown.Id);
+        SetDeviceQueries();
 
         var live = Path.GetDirectoryName(AppPaths.DatabasePath(DataDir))!;
         try
@@ -153,8 +202,9 @@ public sealed class AppState : IDisposable
         if (Interlocked.Exchange(ref _reloading, 1) == 1) return;
         try
         {
-            var queries = Queries;
-            if (queries is null || !queries.DatabaseExists)
+            var pc = Queries;
+            var queries = Current;
+            if (pc is null || queries is null || !queries.DatabaseExists)
             {
                 Version++;
                 Changed?.Invoke();
@@ -169,8 +219,10 @@ public sealed class AppState : IDisposable
                     Colors: queries.ColorMap(),
                     Overrides: queries.ColorOverrideMap(),
                     Icons: AppIcons.Map(logos, names.Values.Select(v => (v.Name, v.Base))),
-                    Sync: queries.Sync(10),
-                    Latest: queries.Latest());
+                    Sync: pc.Sync(10),
+                    Latest: pc.Latest(),
+                    Phones: PhoneQueries.Devices(pc.DatabasePath),
+                    PhoneHours: (queries as PhoneQueries)?.HoursSinceSuccess());
             });
             if (onlyIfChanged && result.Signature == _signature) return;
             _signature = result.Signature;
@@ -179,6 +231,9 @@ public sealed class AppState : IDisposable
             Icons = result.Icons;
             Sync = result.Sync;
             Latest = result.Latest;
+            PhoneHoursSinceSuccess = result.PhoneHours;
+            // A phone's first upload adds it to the sidebar without a restart.
+            Phones = result.Phones;
             Version++;
             Changed?.Invoke();
         }
@@ -212,6 +267,8 @@ public sealed class AppState : IDisposable
                      "SELECT COUNT(*) || ':' || COALESCE(MAX(updated_at), '') FROM app_colors",
                      "SELECT COUNT(*) || ':' || COALESCE(MAX(hidden_at), '') FROM app_hidden",
                      "SELECT COUNT(*) || ':' || COALESCE(MAX(updated_at), '') FROM app_merges",
+                     // A phone upload drained from the inbox changes these and nothing above.
+                     "SELECT COUNT(*) || ':' || COALESCE(MAX(id), 0) FROM android_sync_log",
                  })
         {
             try

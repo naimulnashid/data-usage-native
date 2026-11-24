@@ -108,5 +108,15 @@ public static class Placeholder
         return new SyncData(runs, runs.Count, runs[0], 1, 18315, new Coverage(Day(96), Day(0), 97), 0);
     }
 
+    public static PhoneSyncData PhoneSync()
+    {
+        var uploads = Enumerable.Range(0, 12).Select(i =>
+        {
+            var at = DateTime.UtcNow.AddHours(-6 * i).ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+            return new PhoneUpload(at, at, "success", 1500, 40, 120, null);
+        }).ToList();
+        return new PhoneSyncData(uploads, uploads.Count, uploads[0].ReceivedAt, 1, 0, uploads[0].ReceivedAt, 82000, 140, 180, 89);
+    }
+
     public static TaskInfo Task() => new(true, false, DateTime.UtcNow, 0, DateTime.UtcNow.AddMinutes(15));
 }

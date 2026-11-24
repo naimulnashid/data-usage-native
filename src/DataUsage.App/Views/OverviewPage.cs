@@ -20,20 +20,28 @@ public sealed class OverviewPage(PageContext ctx) : IPage
     private OverviewData? _data;
     private TimelineData? _timeline;
     private NetworkBreakdown? _networks;
+    private PhoneExtras? _phone;
     private List<(string Date, long Total)> _heat = [];
-    private long _rows;
     // Daily by app's own range; every other figure covers all history.
     private int _range = Scope.DefaultChartDays;
 
     public void Load()
     {
-        var q = ctx.State.Queries!;
+        var q = ctx.State.Current!;
         var scope = Scope.All;
         _data = q.Overview(scope);
         _timeline = q.Timeline();
-        _networks = q.Networks(scope);
         _heat = q.HeatmapDays();
-        _rows = _data.LatestDate is null ? q.RowCount() : 1;
+        if (q is PhoneQueries phone)
+        {
+            _phone = phone.Extras(scope);
+            _networks = null;
+        }
+        else
+        {
+            _phone = null;
+            _networks = ((UsageQueries)q).Networks(scope);
+        }
     }
 
     public void Placeholder()
@@ -41,8 +49,8 @@ public sealed class OverviewPage(PageContext ctx) : IPage
         _data = Views.Placeholder.Overview(ctx.State.Device.Split);
         _timeline = Views.Placeholder.Timeline();
         _networks = Views.Placeholder.Networks();
+        _phone = ctx.State.Phone is null ? null : new PhoneExtras(_networks.Total * 9 / 10, _networks.Total / 10, 0, []);
         _heat = Views.Placeholder.Heat();
-        _rows = 1;
     }
 
     public UIElement Build()
@@ -55,11 +63,15 @@ public sealed class OverviewPage(PageContext ctx) : IPage
         if (data.LatestDate is null) return Shell.NoData(ctx);
 
         // ---- Head ----
+        var phone = _phone;
         var sub = $"Latest data {Format.DayLong(data.LatestDate)}";
-        if (state.Sync?.HoursSinceSuccess is { } h) sub += $" · collected {Format.Relative(h)}";
-        var stale = state.Sync?.HoursSinceSuccess > 48;
+        var hours = phone is null ? state.Sync?.HoursSinceSuccess : state.PhoneHoursSinceSuccess;
+        if (hours is { } h) sub += $" · collected {Format.Relative(h)}";
+        // A late phone has lost nothing (Android keeps ~90 days): Sync Status
+        // says how much runway is left, and the overview raises no alarm.
+        var stale = phone is null && hours > 48;
         var coverage = data.Coverage is { } c ? $"{Format.DayShort(c.First)} – {Format.DayShort(c.Last)} · {c.Days} days" : null;
-        page.Children.Add(Parts.PageHead(state.Device.Label, sub, after: stale ? Ui.Badge("collector may be stalled", Ui.BadgeKind.Bad) : null, aside: coverage));
+        page.Children.Add(Parts.PageHead(state.DeviceLabel, sub, after: stale ? Ui.Badge("collector may be stalled", Ui.BadgeKind.Bad) : null, aside: coverage));
 
         // ---- Score cards: widest window first. "All" ignores the range, and
         // leads with the accent: it is the figure this app exists to preserve.
@@ -80,9 +92,7 @@ public sealed class OverviewPage(PageContext ctx) : IPage
         page.Children.Add(Ui.Panel("Trend", trendSub, heaviest, new TrendChart(data.Daily, data.MeanDaily)));
 
         // ---- Activity ----
-        page.Children.Add(Ui.Panel("Activity",
-            "Daily totals. Outlined days were never collected - before collection started, or lost before a run read them - which is not the same as a quiet day.",
-            null, ActivityBody()));
+        page.Children.Add(Ui.Panel("Activity", ActivityNote(phone is not null), null, ActivityBody()));
 
         // ---- Daily by app ----
         // Every range arrives ready-made (each ranks its own top apps), so the
@@ -100,7 +110,7 @@ public sealed class OverviewPage(PageContext ctx) : IPage
         page.Children.Add(Ui.Panel("Daily by app", $"Top {stack.Series.Count(s => s != "Other")} apps stacked; everything else grouped as Other", range, body));
 
         // ---- Hour of day ----
-        page.Children.Add(HourPanel(timeline.Hourly, "Local time, summed over all history"));
+        page.Children.Add(HourPanel(timeline.Hourly, phone is null ? "Local time, summed over all history" : "Local time on the phone, in Android's two-hour buckets"));
 
         // ---- The split app ----
         var splitTotal = data.SplitFocus + data.SplitOther;
@@ -113,8 +123,48 @@ public sealed class OverviewPage(PageContext ctx) : IPage
         }
 
         // ---- Where it went ----
-        page.Children.Add(Ui.Panel("Where it went", null, null, NetworkBody(_networks!)));
+        page.Children.Add(Ui.Panel("Where it went", null, null, phone is null ? NetworkBody(_networks!) : PhoneNetworkBody(phone)));
+
+        // ---- Tethering, last: a caveat about figures already read, kept a
+        // full card because it is the one thing that would make someone add
+        // two totals that must not be added.
+        if (phone is { Tethering: > 0 })
+            page.Children.Add(Ui.Panel("Tethering is counted twice", "Excluded from every figure on this page, including the app list.", null,
+                Ui.Paragraph($"{Format.Bytes(phone.Tethering)} of traffic was relayed by the phone for other devices. If this PC tethers off the phone, those same bytes are also recorded on the PC, under Windows app names. Adding the two devices' totals together would count them twice, so this figure is kept out of the totals rather than folded in.", 15, Palette.TextMutedBrush)));
         return page;
+    }
+
+    /// <summary>The Activity card's note: what an outlined day means on this device.</summary>
+    public static string ActivityNote(bool phone) => phone
+        ? "Daily totals. Outlined days are before this phone started reporting - no data was recorded, which is not the same as a quiet day."
+        : "Daily totals. Outlined days were never collected - before collection started, or lost before a run read them - which is not the same as a quiet day.";
+
+    /// <summary>A phone's "Where it went": Wi-Fi against mobile data, as the web dashboard's phone page has it.</summary>
+    private static StackPanel PhoneNetworkBody(PhoneExtras phone)
+    {
+        var total = phone.Wifi + phone.Mobile;
+        double Pct(long b) => total > 0 ? (double)b / total * 100 : 0;
+        var body = new StackPanel();
+        body.Children.Add(TwoPartBar([(Pct(phone.Wifi) / 100, Palette.AccentBrush), (Pct(phone.Mobile) / 100, Palette.WiredBrush)]));
+        UIElement Cell(LinkKind kind, string label, long bytes, Brush value)
+        {
+            var cell = new StackPanel();
+            var head = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            head.Children.Add(new FontIcon { Glyph = Parts.LinkGlyph(kind), FontSize = 16, Foreground = value, VerticalAlignment = VerticalAlignment.Center });
+            head.Children.Add(Ui.Text(label, 15, 400, Palette.TextMutedBrush));
+            cell.Children.Add(head);
+            var figure = Ui.Text(Format.Bytes(bytes), 44, 650, value, -0.035, numeric: true);
+            figure.Margin = new Thickness(0, 5, 0, 0);
+            cell.Children.Add(figure);
+            cell.Children.Add(Ui.Text($"{Format.Percent(Pct(bytes))} of all traffic", 15, 400, Palette.TextMutedBrush));
+            return cell;
+        }
+        var grid = Parts.Grid(340,
+            Cell(LinkKind.Wifi, "Wi-Fi", phone.Wifi, Palette.AccentBrightBrush),
+            Cell(LinkKind.Mobile, "Mobile data", phone.Mobile, Palette.WiredBrush));
+        grid.Margin = new Thickness(0, 25.6, 0, 0);
+        body.Children.Add(grid);
+        return body;
     }
 
     private StackPanel ActivityBody()

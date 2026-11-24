@@ -12,8 +12,9 @@ another drive, so the history survives.
 
 Built with WinUI 3 on .NET 10. A native port of the
 [Data Usage Dashboard](https://github.com/naimulnashid/data-usage-tracker) web
-app, sharing its design and its rules but no code. Local only: no network
-calls, no server, no account.
+app, sharing its design and its rules but no code. Local only: no server, no
+account, and no network calls unless you connect Android phones through their
+encrypted cloud inbox.
 
 > **Status:** in active development, built for my own setup. Updates can change the database format, so back up the data folder before updating. It needs administrator approval once for its scheduled tasks, and a data folder off the Windows drive (by default `D:\PersistentData\data-usage-native`).
 
@@ -98,6 +99,14 @@ follows your GitHub theme.
   or stalls.
 - **Light or dark**, browser-style zoom from 50% to 200%, and Backspace to go
   back from an app's page.
+- **Android phones**, optional: phones running the web project's
+  [Android reporter](https://github.com/naimulnashid/data-usage-tracker/tree/main/android)
+  upload through an end-to-end encrypted cloud inbox, which this app empties
+  on every collector run. A sidebar then lists this PC and each phone, and a
+  phone gets the same pages: Wi-Fi against mobile data, its apps, and a Sync
+  Status that says how long it can stay away before Android deletes anything.
+  Tethering is shown apart and never added to any total, because a PC
+  tethering off the phone records the same bytes.
 
 ## Installation and getting started
 
@@ -148,8 +157,8 @@ holds everything that must survive a reset:
 |---|---|
 | `live\data-usage.db` | The working SQLite database. |
 | `data-usage.db` | A consistent backup, rewritten after each collection. **Restore from this one.** |
-| `logos\` | App logos, named after the app (`Bitwarden.svg`). |
-| `settings.json` | `DeviceLabel` (the name on the overview) and `SplitApp` (the app shown against everything else), both set from **This PC…** in the settings menu. |
+| `logos\` | App logos, named after the app (`Bitwarden.svg`). A phone's are in `logos\<phone>\`, for example `logos\pixel-8\`. |
+| `settings.json` | `DeviceLabel` (the name on the overview) and `SplitApp` (the app shown against everything else), both set from **This PC…** in the settings menu; and `Inbox`, the phones' cloud inbox, set with `datausage inbox`. |
 
 **The local folder**, `%LOCALAPPDATA%\Data Usage Native`, holds what is cheap
 to lose:
@@ -159,6 +168,18 @@ to lose:
 | `location.json` | Which data folder to use. `Install.ps1` writes it. |
 | `app-settings.json` | Theme, zoom, By App's table or grid, tray and notification choices. |
 | `logs\` | The collector's logs. |
+
+**Phones** (optional) need the inbox's address and this PC's key, set once
+from the CLI:
+
+```powershell
+datausage inbox --url https://<project>.supabase.co/functions/v1/inbox --key D:\keys\inbox-key.pem
+```
+
+The tokens go in `inbox-tokens.json` beside the key, `{"drainToken": "...",
+"ingestToken": "..."}`; keep the key and tokens out of the synced data
+folder. `datausage import-android --db <web dashboard database>` copies the
+web dashboard's phone history in once.
 
 Two environment variables move both folders, for demo or test runs:
 `DATAUSAGE_DATA_DIR` (the data folder) and `DATAUSAGE_LOCAL_DIR` (the local
@@ -239,10 +260,14 @@ flowchart TD
   settings are in the data folder you chose; preferences and logs in
   `%LOCALAPPDATA%\Data Usage Native`. None of it is encrypted, so anyone who
   can read the data folder can read which apps used the network and when.
-- **Nothing leaves the PC**: the app makes no network calls, has no account and
-  sends no telemetry. A cloud client you point at the data folder is the only
-  copy that leaves, and that is your choice.
-- **No credentials**: there is nothing to sign in to and no keys or tokens.
+- **Nothing leaves the PC**: the app has no account and sends no telemetry.
+  Without phones it makes no network calls at all. With phones, it calls the
+  cloud inbox to fetch their uploads, which are sealed to this PC's key
+  (ECDH P-256, HKDF-SHA256, AES-256-GCM) so the inbox stores only ciphertext;
+  it sends nothing of the PC's. A cloud client you point at the data folder is
+  the only other copy that leaves, and that is your choice.
+- **No credentials**: there is nothing to sign in to. The phones' inbox key
+  and tokens, when used, live in files you choose, outside the data folder.
 - **Privileges**: only the snapshot task runs as Administrator, and it runs
   nothing but Windows' own `cmd.exe` and `esentutl.exe` with fixed arguments;
   the app, the collector and anything you can edit run as you. The snapshot

@@ -44,14 +44,14 @@ public static partial class ColorOverrides
     }
 
     /// <summary>group key to #rrggbb. Empty when there are none, or no table yet.</summary>
-    public static Dictionary<string, string> Read(SqliteConnection db)
+    public static Dictionary<string, string> Read(SqliteConnection db, string device = Renames.Device)
     {
         var map = new Dictionary<string, string>();
         try
         {
             using var cmd = db.CreateCommand();
             cmd.CommandText = "SELECT app_key, color FROM app_colors WHERE device = $d";
-            cmd.Parameters.AddWithValue("$d", Renames.Device);
+            cmd.Parameters.AddWithValue("$d", device);
             using var r = cmd.ExecuteReader();
             // Re-validated on the way out: a hand-edited row must not reach a brush.
             while (r.Read())
@@ -68,7 +68,7 @@ public static partial class ColorOverrides
     /// Validate and store, or clear, one colour. An empty string clears it and
     /// the app goes back to its brand or palette colour.
     /// </summary>
-    public static (ColorError Error, string? Color) Save(SqliteConnection db, string key, string? requested, IReadOnlySet<string> known)
+    public static (ColorError Error, string? Color) Save(SqliteConnection db, string key, string? requested, IReadOnlySet<string> known, string device = Renames.Device)
     {
         if (!known.Contains(key)) return (ColorError.UnknownApp, null);
         var reset = requested is not null && requested.Trim().Length == 0;
@@ -76,12 +76,12 @@ public static partial class ColorOverrides
         if (!reset && color is null) return (ColorError.BadColor, null);
 
         if (color is null)
-            UsageDb.Exec(db, "DELETE FROM app_colors WHERE device = $d AND app_key = $k", ("$d", Renames.Device), ("$k", key));
+            UsageDb.Exec(db, "DELETE FROM app_colors WHERE device = $d AND app_key = $k", ("$d", device), ("$k", key));
         else
             UsageDb.Exec(db, """
                 INSERT INTO app_colors (device, app_key, color, updated_at) VALUES ($d, $k, $c, $t)
                 ON CONFLICT (device, app_key) DO UPDATE SET color = excluded.color, updated_at = excluded.updated_at
-                """, ("$d", Renames.Device), ("$k", key), ("$c", color), ("$t", UsageDb.NowIso()));
+                """, ("$d", device), ("$k", key), ("$c", color), ("$t", UsageDb.NowIso()));
         return (ColorError.None, color);
     }
 

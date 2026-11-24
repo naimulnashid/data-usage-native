@@ -31,7 +31,7 @@ public sealed class AppsPage(PageContext ctx) : IPage
     private bool _expanded;
     private bool _showHidden;
 
-    public void Load() => _data = ctx.State.Queries!.ByApp(Scope.All);
+    public void Load() => _data = ctx.State.Current!.ByApp(Scope.All);
 
     public void Placeholder() => _data = Views.Placeholder.ByApp();
 
@@ -40,8 +40,12 @@ public sealed class AppsPage(PageContext ctx) : IPage
         var data = _data!;
         var page = new StackPanel();
         var pct = data.HeadlineTotal > 0 ? (double)data.Unattributed / data.HeadlineTotal * 100 : 0;
+        // A phone has no unattributed remainder; what it keeps apart is tethering.
+        var tetherPct = data.NamedTotal + data.Tethering > 0 ? (double)data.Tethering / (data.NamedTotal + data.Tethering) * 100 : 0;
         page.Children.Add(Parts.PageHead("By App",
-            $"{data.Apps.Count} apps · {Format.Bytes(data.NamedTotal)} attributed" + (data.Unattributed > 0 ? $" · {Format.Bytes(data.Unattributed)} unattributed ({Format.Percent(pct)})" : "")));
+            $"{data.Apps.Count} apps · {Format.Bytes(data.NamedTotal)} attributed"
+            + (data.Unattributed > 0 ? $" · {Format.Bytes(data.Unattributed)} unattributed ({Format.Percent(pct)})" : "")
+            + (data.Tethering > 0 ? $" · {Format.Bytes(data.Tethering)} of tethering excluded ({Format.Percent(tetherPct)})" : "")));
 
         if (data.Apps.Count == 0) return Shell.NoData(ctx);
 

@@ -45,7 +45,7 @@ public static class Palette
     private sealed record Tokens(
         Color Bg, Color Surface, Color SurfaceHover, Color Inset, Color Border, Color BorderBright,
         Color Grid, Color Text, Color TextMuted, Color TextFaint, Color TooltipBg, Color Warn, Color Good,
-        Color RowBorder, Color Accent, Color AccentBright, Color AccentFill, Color Down, Color Up, Color Wired,
+        Color RowBorder, Color Accent, Color AccentBright, Color AccentFill, Color OnAccentFill, Color Down, Color Up, Color Wired,
         Color HeatNone, Color HeatNoneRing, Color HoverWash, Color Plate, Color Chrome, string[] Heat,
         double AccentDim, double AccentBorder, double AccentBorderStrong,
         double InkMin, double InkMax, double InkTextMin, double InkTextMax);
@@ -55,7 +55,7 @@ public static class Palette
         Border: Hex("#1e1e22"), BorderBright: Hex("#2c2c33"), Grid: Hex("#1a1a1e"),
         Text: Hex("#f5f5f7"), TextMuted: Hex("#a1a1aa"), TextFaint: Hex("#7c7c88"), TooltipBg: Hex("#0c0c0e"),
         Warn: Hex("#ff4d4f"), Good: Hex("#22c55e"), RowBorder: Hex("#1e1e22", 0.6),
-        Accent: Hex("#2f80ed"), AccentBright: Hex("#4d97ff"), AccentFill: Hex("#1570eb"),
+        Accent: Hex("#2f80ed"), AccentBright: Hex("#4d97ff"), AccentFill: Hex("#1570eb"), OnAccentFill: Hex("#ffffff"),
         // Download and upload: two shades of the ONE accent, because they are
         // two halves of one quantity. Darker is download.
         Down: Mix(Hex("#000000"), Hex("#2f80ed"), 0.78), Up: Mix(Hex("#ffffff"), Hex("#4d97ff"), 0.72),
@@ -86,7 +86,7 @@ public static class Palette
         Border: Hex("#e3e5ea"), BorderBright: Hex("#cfd2d9"), Grid: Hex("#eceef2"),
         Text: Hex("#16171a"), TextMuted: Hex("#52525b"), TextFaint: Hex("#6b6b76"), TooltipBg: Hex("#ffffff"),
         Warn: Hex("#b42318"), Good: Hex("#15803d"), RowBorder: Hex("#e3e5ea"),
-        Accent: Hex("#1664d9"), AccentBright: Hex("#0f5bc4"), AccentFill: Hex("#1664d9"),
+        Accent: Hex("#1664d9"), AccentBright: Hex("#0f5bc4"), AccentFill: Hex("#1664d9"), OnAccentFill: Hex("#ffffff"),
         Down: Hex("#1664d9"), Up: Mix(Hex("#ffffff"), Hex("#0f5bc4"), 0.45),
         // Wired is text as well as a fill here, so it stays dark enough to read.
         Wired: Hex("#3f6fb5"),
@@ -100,7 +100,40 @@ public static class Palette
         AccentDim: 0.10, AccentBorder: 0.30, AccentBorderStrong: 0.42,
         InkMin: 0, InkMax: 74, InkTextMin: 0, InkTextMax: 50);
 
+    /// <summary>
+    /// A phone's pages wear Android Green, as on the web dashboard, so which
+    /// device you are looking at is plain at a glance. The web's values
+    /// (accent.ts): green fills carry near-black text, 10.57:1; on the light
+    /// theme it deepens to #0d7340 and carries white. Download and upload
+    /// derive from it exactly as the PC's do from Tech Blue.
+    /// </summary>
+    private static readonly Tokens PhoneDark = Dark with
+    {
+        Accent = Hex("#3ddc84"), AccentBright = Hex("#66eda5"), AccentFill = Hex("#3ddc84"), OnAccentFill = Hex("#06140c"),
+        Down = Mix(Hex("#000000"), Hex("#3ddc84"), 0.78), Up = Mix(Hex("#ffffff"), Hex("#66eda5"), 0.72),
+        Wired = Mix(Hex("#ffffff"), Hex("#3ddc84"), 0.40),
+        Heat = ["#131519", "#0d3a24", "#125234", "#1a7b4c", "#3ddc84", "#8af0b8"],
+    };
+
+    private static readonly Tokens PhoneLight = Light with
+    {
+        Accent = Hex("#0d7340"), AccentBright = Hex("#0b6b3a"), AccentFill = Hex("#0d7340"), OnAccentFill = Hex("#ffffff"),
+        Down = Hex("#0d7340"), Up = Mix(Hex("#ffffff"), Hex("#0b6b3a"), 0.45),
+        Wired = Hex("#2f7a55"),
+        Heat = ["#e1e6ed", "#c3ead3", "#8dd6ad", "#4dba80", "#1f9457", "#0d6b3c"],
+    };
+
     private static Tokens _t = Dark;
+
+    /// <summary>Whether the phone accent is applied.</summary>
+    public static bool IsPhone { get; private set; }
+
+    /// <summary>A device's accent and its bright step on the current theme, for the sidebar's rows.</summary>
+    public static (Color Accent, Color Bright) AccentOf(bool phone)
+    {
+        var t = (IsLight, phone) switch { (true, true) => PhoneLight, (true, false) => Light, (false, true) => PhoneDark, _ => Dark };
+        return (t.Accent, t.AccentBright);
+    }
 
     /// <summary>Whether the light theme is applied.</summary>
     public static bool IsLight { get; private set; }
@@ -176,7 +209,7 @@ public static class Palette
     public static readonly SolidColorBrush AccentBorderBrush = new();
     public static readonly SolidColorBrush AccentBorderStrongBrush = new();
     public static readonly SolidColorBrush AccentFillBrush = new();
-    public static readonly SolidColorBrush OnAccentFillBrush = new(Colors.White);
+    public static readonly SolidColorBrush OnAccentFillBrush = new();
     public static readonly SolidColorBrush DownBrush = new();
     public static readonly SolidColorBrush UpBrush = new();
     public static readonly SolidColorBrush WiredBrush = new();
@@ -207,10 +240,31 @@ public static class Palette
     {
         if (light == IsLight) return;
         IsLight = light;
-        _t = light ? Light : Dark;
+        Select();
         Paint();
         Changed?.Invoke();
     }
+
+    /// <summary>
+    /// Switches the accent between the PC's and a phone's. Raises nothing: the
+    /// window rebuilds the page it is navigating to anyway, and that rebuild
+    /// is what repaints anything that baked a colour in.
+    /// </summary>
+    public static void SetPhone(bool phone)
+    {
+        if (phone == IsPhone) return;
+        IsPhone = phone;
+        Select();
+        Paint();
+    }
+
+    private static void Select() => _t = (IsLight, IsPhone) switch
+    {
+        (true, true) => PhoneLight,
+        (true, false) => Light,
+        (false, true) => PhoneDark,
+        _ => Dark,
+    };
 
     private static void Paint()
     {
@@ -242,6 +296,7 @@ public static class Palette
         AccentBorderBrush.Color = WithAlpha(_t.Accent, _t.AccentBorder);
         AccentBorderStrongBrush.Color = WithAlpha(_t.Accent, _t.AccentBorderStrong);
         AccentFillBrush.Color = _t.AccentFill;
+        OnAccentFillBrush.Color = _t.OnAccentFill;
         DownBrush.Color = _t.Down;
         UpBrush.Color = _t.Up;
         WiredBrush.Color = _t.Wired;

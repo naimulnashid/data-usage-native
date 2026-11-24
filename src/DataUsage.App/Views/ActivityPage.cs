@@ -18,7 +18,7 @@ public sealed class ActivityPage(PageContext ctx) : IPage
 
     public Route Back { get; } = new(PageKind.Overview);
 
-    public void Load() => _days = ctx.State.Queries!.HeatmapDays(weeks: null);
+    public void Load() => _days = ctx.State.Current!.HeatmapDays(weeks: null);
 
     public void Placeholder() => _days = Views.Placeholder.Heat();
 
@@ -48,8 +48,7 @@ public sealed class ActivityPage(PageContext ctx) : IPage
         }
         var span = blocks.Count > 0 ? $"since {Format.DayShort(blocks[0].First)}, {blocks[0].First[..4]}" : "";
         body.Children.Add(HeatmapView.Legend(blocks.Sum(b => b.Total), blocks.Sum(b => b.ActiveDays), span, null));
-        page.Children.Add(Ui.Panel(ctx.State.Device.Label,
-            "Daily totals. Outlined days were never collected - before collection started, or lost before a run read them - which is not the same as a quiet day.", null, body));
+        page.Children.Add(Ui.Panel(ctx.State.DeviceLabel, OverviewPage.ActivityNote(ctx.State.Phone is not null), null, body));
         return page;
     }
 }

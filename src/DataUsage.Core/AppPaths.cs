@@ -70,6 +70,13 @@ public static class AppPaths
 
     public static string LogosDir(string dataDir) => Path.Combine(dataDir, "logos");
 
+    /// <summary>
+    /// A phone's own logos, <c>logos\&lt;slug&gt;</c>. Apart from the PC's
+    /// because an alias maps a name to a mark for one device only: both
+    /// phones have an app called Settings, and on the PC that is Windows.
+    /// </summary>
+    public static string PhoneLogosDir(string dataDir, string slug) => Path.Combine(LogosDir(dataDir), slug);
+
     public static string SettingsPath(string dataDir) => Path.Combine(dataDir, "settings.json");
 
     /// <summary>The SRUM database this machine writes.</summary>

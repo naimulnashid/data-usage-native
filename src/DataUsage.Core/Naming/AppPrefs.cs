@@ -33,21 +33,21 @@ public enum MergeError
 public static class AppPrefs
 {
     /// <summary>Family key to the key it is merged into.</summary>
-    public static Dictionary<string, string> ReadMerges(SqliteConnection db) =>
-        ReadPairs(db, "SELECT app_key, into_key FROM app_merges WHERE device = $d");
+    public static Dictionary<string, string> ReadMerges(SqliteConnection db, string device = Renames.Device) =>
+        ReadPairs(db, "SELECT app_key, into_key FROM app_merges WHERE device = $d", device);
 
     /// <summary>Family keys hidden from the By App page.</summary>
-    public static HashSet<string> ReadHidden(SqliteConnection db) =>
-        [.. ReadPairs(db, "SELECT app_key, app_key FROM app_hidden WHERE device = $d").Keys];
+    public static HashSet<string> ReadHidden(SqliteConnection db, string device = Renames.Device) =>
+        [.. ReadPairs(db, "SELECT app_key, app_key FROM app_hidden WHERE device = $d", device).Keys];
 
-    private static Dictionary<string, string> ReadPairs(SqliteConnection db, string sql)
+    private static Dictionary<string, string> ReadPairs(SqliteConnection db, string sql, string device)
     {
         var map = new Dictionary<string, string>();
         try
         {
             using var cmd = db.CreateCommand();
             cmd.CommandText = sql;
-            cmd.Parameters.AddWithValue("$d", Renames.Device);
+            cmd.Parameters.AddWithValue("$d", device);
             using var r = cmd.ExecuteReader();
             while (r.Read()) map[r.GetString(0)] = r.GetString(1);
         }
@@ -58,13 +58,13 @@ public static class AppPrefs
         return map;
     }
 
-    public static void SetHidden(SqliteConnection db, string key, bool hidden)
+    public static void SetHidden(SqliteConnection db, string key, bool hidden, string device = Renames.Device)
     {
         if (hidden)
             UsageDb.Exec(db, "INSERT INTO app_hidden (device, app_key, hidden_at) VALUES ($d, $k, $t) ON CONFLICT (device, app_key) DO NOTHING",
-                ("$d", Renames.Device), ("$k", key), ("$t", UsageDb.NowIso()));
+                ("$d", device), ("$k", key), ("$t", UsageDb.NowIso()));
         else
-            UsageDb.Exec(db, "DELETE FROM app_hidden WHERE device = $d AND app_key = $k", ("$d", Renames.Device), ("$k", key));
+            UsageDb.Exec(db, "DELETE FROM app_hidden WHERE device = $d AND app_key = $k", ("$d", device), ("$k", key));
     }
 
     /// <summary>
@@ -72,16 +72,16 @@ public static class AppPrefs
     /// again when <paramref name="into"/> is null. <paramref name="known"/> is
     /// every family key BEFORE merges.
     /// </summary>
-    public static MergeError SetMerge(SqliteConnection db, string key, string? into, IReadOnlySet<string> known)
+    public static MergeError SetMerge(SqliteConnection db, string key, string? into, IReadOnlySet<string> known, string device = Renames.Device)
     {
         if (!known.Contains(key)) return MergeError.UnknownApp;
         if (into is null)
         {
-            UsageDb.Exec(db, "DELETE FROM app_merges WHERE device = $d AND app_key = $k", ("$d", Renames.Device), ("$k", key));
+            UsageDb.Exec(db, "DELETE FROM app_merges WHERE device = $d AND app_key = $k", ("$d", device), ("$k", key));
             return MergeError.None;
         }
         if (!known.Contains(into)) return MergeError.UnknownApp;
-        var target = ReadMerges(db).GetValueOrDefault(into) ?? into;
+        var target = ReadMerges(db, device).GetValueOrDefault(into) ?? into;
         if (target == key) return MergeError.SameApp;
 
         var now = UsageDb.NowIso();
@@ -92,13 +92,13 @@ public static class AppPrefs
         {
             // Whatever was merged into `key` follows it to the new target.
             UsageDb.Exec(db, "UPDATE app_merges SET into_key = $t, updated_at = $n WHERE device = $d AND into_key = $k",
-                ("$t", target), ("$n", now), ("$d", Renames.Device), ("$k", key));
+                ("$t", target), ("$n", now), ("$d", device), ("$k", key));
             UsageDb.Exec(db, """
                 INSERT INTO app_merges (device, app_key, into_key, updated_at) VALUES ($d, $k, $t, $n)
                 ON CONFLICT (device, app_key) DO UPDATE SET into_key = excluded.into_key, updated_at = excluded.updated_at
-                """, ("$d", Renames.Device), ("$k", key), ("$t", target), ("$n", now));
+                """, ("$d", device), ("$k", key), ("$t", target), ("$n", now));
             // A merged app is not on the list to be hidden from.
-            UsageDb.Exec(db, "DELETE FROM app_hidden WHERE device = $d AND app_key = $k", ("$d", Renames.Device), ("$k", key));
+            UsageDb.Exec(db, "DELETE FROM app_hidden WHERE device = $d AND app_key = $k", ("$d", device), ("$k", key));
             UsageDb.Exec(db, "COMMIT");
         }
         catch

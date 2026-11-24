@@ -69,7 +69,8 @@ public sealed class AppRow
     public bool Hidden { get; set; }
 }
 
-public sealed record ByAppData(IReadOnlyList<AppRow> Apps, long NamedTotal, long Unattributed, long HeadlineTotal);
+/// <param name="Tethering">A phone's traffic relayed for other devices: kept out of every figure, since a PC tethering off the phone counts it too. Always 0 for the PC.</param>
+public sealed record ByAppData(IReadOnlyList<AppRow> Apps, long NamedTotal, long Unattributed, long HeadlineTotal, long Tethering = 0);
 
 public sealed record AppNetwork(string Id, string Label, long Bytes);
 

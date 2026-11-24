@@ -248,4 +248,83 @@ public static class Parts
         LinkKind.Mobile => "\uE86F",
         _ => "\uE774",
     };
+
+    /// <summary>
+    /// Newest and Oldest at the ends, Newer and Older one step each, the page
+    /// numbers around this one (Core/View/Pages), and a box that goes straight
+    /// to any page. Page 1 is the newest. The web dashboard's pager.
+    /// </summary>
+    public static FrameworkElement Pager(int current, int pages, Action<int> onPage, string items)
+    {
+        void Go(int page) => onPage(Math.Clamp(page, 1, pages));
+
+        var pager = new WrapPanel { HorizontalSpacing = 7, VerticalSpacing = 8, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 18, 0, 0) };
+        Button Step(string label, int to, bool enabled, string tip)
+        {
+            var chip = Ui.Chip(label, false);
+            chip.IsEnabled = enabled;
+            chip.Click += (_, _) => Go(to);
+            Ui.SetTip(chip, tip);
+            return chip;
+        }
+        pager.Children.Add(Step("Newest", 1, current > 1, $"First page: the newest {items}"));
+        pager.Children.Add(Step("← Newer", current - 1, current > 1, "Previous page"));
+
+        var numbers = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, Margin = new Thickness(6, 0, 6, 0) };
+        foreach (var item in Pages.Items(current, pages))
+        {
+            if (item is not { } n)
+            {
+                var gap = Ui.Text("…", 15, 400, Palette.TextFaintBrush, selectable: false);
+                gap.VerticalAlignment = VerticalAlignment.Center;
+                numbers.Children.Add(gap);
+                continue;
+            }
+            var chip = Ui.Chip(n.ToString(System.Globalization.CultureInfo.InvariantCulture), n == current);
+            chip.MinWidth = 40;
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(chip, $"Page {n}");
+            chip.Click += (_, _) => Go(n);
+            numbers.Children.Add(chip);
+        }
+        pager.Children.Add(numbers);
+
+        pager.Children.Add(Step("Older →", current + 1, current < pages, "Next page"));
+        pager.Children.Add(Step("Oldest", pages, current < pages, $"Last page: the oldest {items}"));
+
+        // Straight to any page, rather than a walk through the ones between.
+        var jump = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(10, 0, 0, 0) };
+        var label = Ui.Text("Go to page", 15, 400, Palette.TextMutedBrush, selectable: false);
+        label.VerticalAlignment = VerticalAlignment.Center;
+        jump.Children.Add(label);
+        var box = new NumberBox
+        {
+            Value = current,
+            Minimum = 1,
+            Maximum = pages,
+            Width = 76,
+            SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Hidden,
+            ValidationMode = NumberBoxValidationMode.InvalidInputOverwritten,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(box, $"Page number, 1 to {pages}");
+        void Submit()
+        {
+            if (!double.IsNaN(box.Value)) Go((int)box.Value);
+        }
+        box.KeyDown += (_, e) =>
+        {
+            if (e.Key != Windows.System.VirtualKey.Enter) return;
+            e.Handled = true;
+            Submit();
+        };
+        jump.Children.Add(box);
+        var of = Ui.Text($"of {pages}", 15, 400, Palette.TextMutedBrush, selectable: false);
+        of.VerticalAlignment = VerticalAlignment.Center;
+        jump.Children.Add(of);
+        var go = Ui.Chip("Go", false, 14);
+        go.Click += (_, _) => Submit();
+        jump.Children.Add(go);
+        pager.Children.Add(jump);
+        return pager;
+    }
 }
